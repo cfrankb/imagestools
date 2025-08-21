@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Image Trim App
+Comment=Trim and center images to 16x16 with preview
+Exec=imagetrimapp
+Icon=app-icon
+Terminal=false
+Categories=Graphics;

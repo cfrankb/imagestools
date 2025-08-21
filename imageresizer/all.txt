@@ -1,0 +1,752 @@
+// main.cpp
+#include "ImageResizerApp.h"
+#include <QApplication>
+
+int main(int argc, char *argv[])
+{
+    QApplication app(argc, argv);
+    
+    ImageResizerApp window;
+    window.show();
+    
+    return app.exec();
+}
+
+// ImageResizerApp.h
+#ifndef IMAGERESIZER_H
+#define IMAGERESIZER_H
+
+#include <QtWidgets/QMainWindow>
+#include <QtWidgets/QVBoxLayout>
+#include <QtWidgets/QHBoxLayout>
+#include <QtWidgets/QGridLayout>
+#include <QtWidgets/QWidget>
+#include <QtWidgets/QPushButton>
+#include <QtWidgets/QLabel>
+#include <QtWidgets/QSpinBox>
+#include <QtWidgets/QScrollArea>
+#include <QtWidgets/QCheckBox>
+#include <QtWidgets/QProgressBar>
+#include <QtWidgets/QFileDialog>
+#include <QtWidgets/QMessageBox>
+#include <QtWidgets/QGroupBox>
+#include <QtCore/QThread>
+#include <QtCore/QMimeData>
+#include <QtGui/QDragEnterEvent>
+#include <QtGui/QDropEvent>
+#include <QtGui/QPixmap>
+#include <QList>
+
+class ImageItem;
+class ResizeThread;
+
+class ImageResizerApp : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    ImageResizerApp(QWidget *parent = nullptr);
+    ~ImageResizerApp();
+
+protected:
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
+
+private slots:
+    void addFiles();
+    void updatePreviews();
+    void selectAll();
+    void selectNone();
+    void exportImages();
+    void exportFinished(const QString &zipPath);
+    void exportError(const QString &errorMessage);
+    void updateProgress(int value);
+
+private:
+    void setupUI();
+    void addImageFiles(const QStringList &filePaths);
+    bool isImageFile(const QString &filePath);
+
+    QWidget *m_centralWidget;
+    QVBoxLayout *m_mainLayout;
+    QSpinBox *m_widthSpinBox;
+    QSpinBox *m_heightSpinBox;
+    QCheckBox *m_aspectCheckBox;
+    QPushButton *m_selectAllBtn;
+    QPushButton *m_selectNoneBtn;
+    QPushButton *m_addFilesBtn;
+    QPushButton *m_exportBtn;
+    QLabel *m_dropLabel;
+    QScrollArea *m_scrollArea;
+    QWidget *m_scrollWidget;
+    QVBoxLayout *m_scrollLayout;
+    QProgressBar *m_progressBar;
+    
+    QList<ImageItem*> m_imageItems;
+    ResizeThread *m_resizeThread;
+};
+
+class ImageItem : public QWidget
+{
+    Q_OBJECT
+
+public:
+    explicit ImageItem(const QString &filePath, QWidget *parent = nullptr);
+    
+    void updatePreview(int targetWidth, int targetHeight, bool maintainAspect);
+    bool isSelected() const;
+    void setSelected(bool selected);
+    QString getFilePath() const { return m_filePath; }
+    QPixmap getOriginalPixmap() const { return m_originalPixmap; }
+
+private:
+    void setupUI();
+    void loadImage();
+
+    QString m_filePath;
+    QPixmap m_originalPixmap;
+    QPixmap m_resizedPixmap;
+    
+    QCheckBox *m_checkBox;
+    QLabel *m_originalLabel;
+    QLabel *m_previewLabel;
+    QLabel *m_originalSizeLabel;
+    QLabel *m_previewSizeLabel;
+};
+
+class ResizeThread : public QThread
+{
+    Q_OBJECT
+
+public:
+    ResizeThread(const QList<ImageItem*> &imageItems, int targetWidth, int targetHeight, bool maintainAspect, QObject *parent = nullptr);
+
+signals:
+    void progress(int value);
+    void finished(const QString &zipPath);
+    void error(const QString &errorMessage);
+
+protected:
+    void run() override;
+
+private:
+    QList<ImageItem*> m_imageItems;
+    int m_targetWidth;
+    int m_targetHeight;
+    bool m_maintainAspect;
+};
+
+#endif // IMAGERESIZER_H
+
+// ImageResizerApp.cpp
+#include "ImageResizerApp.h"
+#include <QtCore/QUrl>
+#include <QtCore/QFileInfo>
+#include <QtCore/QDir>
+#include <QtCore/QStandardPaths>
+#include <QtCore/QTemporaryDir>
+#include <QtGui/QPixmap>
+#include <QtWidgets/QApplication>
+#include <QMimeData>
+
+ImageResizerApp::ImageResizerApp(QWidget *parent)
+    : QMainWindow(parent)
+    , m_resizeThread(nullptr)
+{
+    setupUI();
+    setAcceptDrops(true);
+}
+
+ImageResizerApp::~ImageResizerApp()
+{
+    if (m_resizeThread && m_resizeThread->isRunning()) {
+        m_resizeThread->quit();
+        m_resizeThread->wait();
+    }
+}
+
+void ImageResizerApp::setupUI()
+{
+    setWindowTitle("Qt6 C++ Batch Image Resizer");
+    setGeometry(100, 100, 1000, 700);
+    
+    m_centralWidget = new QWidget;
+    setCentralWidget(m_centralWidget);
+    
+    m_mainLayout = new QVBoxLayout;
+    
+    // Controls section
+    QGroupBox *controlsGroup = new QGroupBox("Resize Settings");
+    QGridLayout *controlsLayout = new QGridLayout;
+    
+    // Size controls
+    controlsLayout->addWidget(new QLabel("Target Width:"), 0, 0);
+    m_widthSpinBox = new QSpinBox;
+    m_widthSpinBox->setRange(1, 10000);
+    m_widthSpinBox->setValue(800);
+    connect(m_widthSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &ImageResizerApp::updatePreviews);
+    controlsLayout->addWidget(m_widthSpinBox, 0, 1);
+    
+    controlsLayout->addWidget(new QLabel("Target Height:"), 0, 2);
+    m_heightSpinBox = new QSpinBox;
+    m_heightSpinBox->setRange(1, 10000);
+    m_heightSpinBox->setValue(600);
+    connect(m_heightSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &ImageResizerApp::updatePreviews);
+    controlsLayout->addWidget(m_heightSpinBox, 0, 3);
+    
+    // Aspect ratio checkbox
+    m_aspectCheckBox = new QCheckBox("Maintain aspect ratio");
+    m_aspectCheckBox->setChecked(true);
+    connect(m_aspectCheckBox, &QCheckBox::toggled, this, &ImageResizerApp::updatePreviews);
+    controlsLayout->addWidget(m_aspectCheckBox, 1, 0, 1, 2);
+    
+    controlsGroup->setLayout(controlsLayout);
+    m_mainLayout->addWidget(controlsGroup);
+    
+    // Selection controls
+    QHBoxLayout *selectionLayout = new QHBoxLayout;
+    
+    m_selectAllBtn = new QPushButton("Select All");
+    connect(m_selectAllBtn, &QPushButton::clicked, this, &ImageResizerApp::selectAll);
+    selectionLayout->addWidget(m_selectAllBtn);
+    
+    m_selectNoneBtn = new QPushButton("Select None");
+    connect(m_selectNoneBtn, &QPushButton::clicked, this, &ImageResizerApp::selectNone);
+    selectionLayout->addWidget(m_selectNoneBtn);
+    
+    selectionLayout->addStretch();
+    
+    // Add files button
+    m_addFilesBtn = new QPushButton("Add Files");
+    connect(m_addFilesBtn, &QPushButton::clicked, this, &ImageResizerApp::addFiles);
+    selectionLayout->addWidget(m_addFilesBtn);
+    
+    // Export button
+    m_exportBtn = new QPushButton("Export as ZIP");
+    connect(m_exportBtn, &QPushButton::clicked, this, &ImageResizerApp::exportImages);
+    m_exportBtn->setEnabled(false);
+    selectionLayout->addWidget(m_exportBtn);
+    
+    m_mainLayout->addLayout(selectionLayout);
+    
+    // Drag and drop area
+    m_dropLabel = new QLabel("Drag and drop images here or use 'Add Files' button");
+    m_dropLabel->setAlignment(Qt::AlignCenter);
+    m_dropLabel->setStyleSheet(
+        "QLabel {"
+        "border: 2px dashed #aaa;"
+        "border-radius: 10px;"
+        "padding: 20px;"
+        "font-size: 14px;"
+        "color: #666;"
+        "min-height: 100px;"
+        "}"
+    );
+    m_mainLayout->addWidget(m_dropLabel);
+    
+    // Scroll area for images
+    m_scrollArea = new QScrollArea;
+    m_scrollWidget = new QWidget;
+    m_scrollLayout = new QVBoxLayout;
+    m_scrollWidget->setLayout(m_scrollLayout);
+    m_scrollArea->setWidget(m_scrollWidget);
+    m_scrollArea->setWidgetResizable(true);
+    m_mainLayout->addWidget(m_scrollArea);
+    
+    // Progress bar
+    m_progressBar = new QProgressBar;
+    m_progressBar->setVisible(false);
+    m_mainLayout->addWidget(m_progressBar);
+    
+    m_centralWidget->setLayout(m_mainLayout);
+}
+
+void ImageResizerApp::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (event->mimeData()->hasUrls()) {
+        event->acceptProposedAction();
+    }
+}
+
+void ImageResizerApp::dropEvent(QDropEvent *event)
+{
+    QStringList files;
+    const QList<QUrl> urls = event->mimeData()->urls();
+    
+    for (const QUrl &url : urls) {
+        QString filePath = url.toLocalFile();
+        if (isImageFile(filePath)) {
+            files.append(filePath);
+        }
+    }
+    
+    if (!files.isEmpty()) {
+        addImageFiles(files);
+    }
+}
+
+bool ImageResizerApp::isImageFile(const QString &filePath)
+{
+    QStringList validExtensions = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".webp"};
+    QFileInfo fileInfo(filePath);
+    return validExtensions.contains(fileInfo.suffix().toLower());
+}
+
+void ImageResizerApp::addFiles()
+{
+    QStringList files = QFileDialog::getOpenFileNames(
+        this,
+        "Select Images",
+        "",
+        "Image files (*.jpg *.jpeg *.png *.bmp *.gif *.tiff *.webp)"
+    );
+    
+    if (!files.isEmpty()) {
+        addImageFiles(files);
+    }
+}
+
+void ImageResizerApp::addImageFiles(const QStringList &filePaths)
+{
+    for (const QString &filePath : filePaths) {
+        // Check if file already added
+        bool alreadyExists = false;
+        for (ImageItem *item : m_imageItems) {
+            if (item->getFilePath() == filePath) {
+                alreadyExists = true;
+                break;
+            }
+        }
+        
+        if (alreadyExists) continue;
+        
+        ImageItem *imageItem = new ImageItem(filePath);
+        m_imageItems.append(imageItem);
+        m_scrollLayout->addWidget(imageItem);
+    }
+    
+    // Hide drop label if we have images
+    if (!m_imageItems.isEmpty()) {
+        m_dropLabel->setVisible(false);
+        m_exportBtn->setEnabled(true);
+    }
+    
+    // Update previews
+    updatePreviews();
+}
+
+void ImageResizerApp::updatePreviews()
+{
+    int targetWidth = m_widthSpinBox->value();
+    int targetHeight = m_heightSpinBox->value();
+    bool maintainAspect = m_aspectCheckBox->isChecked();
+    
+    for (ImageItem *item : m_imageItems) {
+        item->updatePreview(targetWidth, targetHeight, maintainAspect);
+    }
+}
+
+void ImageResizerApp::selectAll()
+{
+    for (ImageItem *item : m_imageItems) {
+        item->setSelected(true);
+    }
+}
+
+void ImageResizerApp::selectNone()
+{
+    for (ImageItem *item : m_imageItems) {
+        item->setSelected(false);
+    }
+}
+
+void ImageResizerApp::exportImages()
+{
+    int selectedCount = 0;
+    for (ImageItem *item : m_imageItems) {
+        if (item->isSelected()) {
+            selectedCount++;
+        }
+    }
+    
+    if (selectedCount == 0) {
+        QMessageBox::warning(this, "Warning", "No images selected for export!");
+        return;
+    }
+    
+    // Show progress bar
+    m_progressBar->setVisible(true);
+    m_progressBar->setValue(0);
+    m_exportBtn->setEnabled(false);
+    
+    // Start resize thread
+    m_resizeThread = new ResizeThread(
+        m_imageItems,
+        m_widthSpinBox->value(),
+        m_heightSpinBox->value(),
+        m_aspectCheckBox->isChecked(),
+        this
+    );
+    
+    connect(m_resizeThread, &ResizeThread::progress, this, &ImageResizerApp::updateProgress);
+    connect(m_resizeThread, &ResizeThread::finished, this, &ImageResizerApp::exportFinished);
+    connect(m_resizeThread, &ResizeThread::error, this, &ImageResizerApp::exportError);
+    
+    m_resizeThread->start();
+}
+
+void ImageResizerApp::updateProgress(int value)
+{
+    m_progressBar->setValue(value);
+}
+
+void ImageResizerApp::exportFinished(const QString &zipPath)
+{
+    m_progressBar->setVisible(false);
+    m_exportBtn->setEnabled(true);
+    
+    // Ask user where to save the zip file
+    QString savePath = QFileDialog::getSaveFileName(
+        this,
+        "Save Resized Images",
+        "resized_images.zip",
+        "ZIP files (*.zip)"
+    );
+    
+    if (!savePath.isEmpty()) {
+        QFile::remove(savePath); // Remove existing file if it exists
+        if (QFile::copy(zipPath, savePath)) {
+            QMessageBox::information(
+                this, 
+                "Success", 
+                QString("Images exported successfully to:\n%1").arg(savePath)
+            );
+        } else {
+            QMessageBox::critical(this, "Error", "Failed to save file");
+        }
+    }
+    
+    // Clean up temporary file
+    QFile::remove(zipPath);
+    
+    // Clean up thread
+    m_resizeThread->deleteLater();
+    m_resizeThread = nullptr;
+}
+
+void ImageResizerApp::exportError(const QString &errorMessage)
+{
+    m_progressBar->setVisible(false);
+    m_exportBtn->setEnabled(true);
+    QMessageBox::critical(this, "Error", QString("Export failed: %1").arg(errorMessage));
+    
+    // Clean up thread
+    if (m_resizeThread) {
+        m_resizeThread->deleteLater();
+        m_resizeThread = nullptr;
+    }
+}
+
+// ImageItem.cpp
+#include "ImageResizerApp.h"
+#include <QtCore/QFileInfo>
+#include <QtGui/QPixmap>
+
+ImageItem::ImageItem(const QString &filePath, QWidget *parent)
+    : QWidget(parent)
+    , m_filePath(filePath)
+{
+    setupUI();
+    loadImage();
+}
+
+void ImageItem::setupUI()
+{
+    QVBoxLayout *layout = new QVBoxLayout;
+    
+    // Checkbox for selection
+    QFileInfo fileInfo(m_filePath);
+    m_checkBox = new QCheckBox(fileInfo.fileName());
+    m_checkBox->setChecked(true);
+    layout->addWidget(m_checkBox);
+    
+    // Container for images
+    QHBoxLayout *imagesLayout = new QHBoxLayout;
+    
+    // Original image
+    QGroupBox *originalGroup = new QGroupBox("Original");
+    QVBoxLayout *originalLayout = new QVBoxLayout;
+    m_originalLabel = new QLabel;
+    m_originalLabel->setFixedSize(200, 150);
+    m_originalLabel->setScaledContents(true);
+    m_originalLabel->setStyleSheet("border: 1px solid gray");
+    originalLayout->addWidget(m_originalLabel);
+    m_originalSizeLabel = new QLabel("Size: Loading...");
+    originalLayout->addWidget(m_originalSizeLabel);
+    originalGroup->setLayout(originalLayout);
+    
+    // Preview image
+    QGroupBox *previewGroup = new QGroupBox("Preview");
+    QVBoxLayout *previewLayout = new QVBoxLayout;
+    m_previewLabel = new QLabel;
+    m_previewLabel->setFixedSize(200, 150);
+    m_previewLabel->setScaledContents(true);
+    m_previewLabel->setStyleSheet("border: 1px solid gray");
+    previewLayout->addWidget(m_previewLabel);
+    m_previewSizeLabel = new QLabel("Size: No preview");
+    previewLayout->addWidget(m_previewSizeLabel);
+    previewGroup->setLayout(previewLayout);
+    
+    imagesLayout->addWidget(originalGroup);
+    imagesLayout->addWidget(previewGroup);
+    
+    layout->addLayout(imagesLayout);
+    setLayout(layout);
+}
+
+void ImageItem::loadImage()
+{
+    m_originalPixmap = QPixmap(m_filePath);
+    
+    if (!m_originalPixmap.isNull()) {
+        m_originalLabel->setPixmap(m_originalPixmap);
+        m_originalSizeLabel->setText(QString("Size: %1 x %2")
+                                   .arg(m_originalPixmap.width())
+                                   .arg(m_originalPixmap.height()));
+    } else {
+        m_originalLabel->setText("Error loading image");
+    }
+}
+
+void ImageItem::updatePreview(int targetWidth, int targetHeight, bool maintainAspect)
+{
+    if (m_originalPixmap.isNull()) return;
+    
+    int newWidth, newHeight;
+    
+    if (maintainAspect) {
+        // Calculate aspect ratio preserving dimensions
+        double aspectRatio = static_cast<double>(m_originalPixmap.width()) / m_originalPixmap.height();
+        
+        if (static_cast<double>(targetWidth) / targetHeight > aspectRatio) {
+            // Height is the limiting factor
+            newHeight = targetHeight;
+            newWidth = static_cast<int>(targetHeight * aspectRatio);
+        } else {
+            // Width is the limiting factor
+            newWidth = targetWidth;
+            newHeight = static_cast<int>(targetWidth / aspectRatio);
+        }
+    } else {
+        newWidth = targetWidth;
+        newHeight = targetHeight;
+    }
+    
+    // Create resized pixmap
+    m_resizedPixmap = m_originalPixmap.scaled(newWidth, newHeight, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    m_previewLabel->setPixmap(m_resizedPixmap);
+    
+    // Update size label
+    m_previewSizeLabel->setText(QString("Size: %1 x %2").arg(newWidth).arg(newHeight));
+}
+
+bool ImageItem::isSelected() const
+{
+    return m_checkBox->isChecked();
+}
+
+void ImageItem::setSelected(bool selected)
+{
+    m_checkBox->setChecked(selected);
+}
+
+// ResizeThread.cpp
+#include "ImageResizerApp.h"
+#include <QtCore/QTemporaryDir>
+#include <QtCore/QDir>
+#include <QtCore/QFileInfo>
+#include <QtGui/QPixmap>
+#include <QtCore/QProcess>
+#include <QtCore/QDebug>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <zip.h>
+#else
+#include <QProcess>
+#endif
+
+ResizeThread::ResizeThread(const QList<ImageItem*> &imageItems, int targetWidth, int targetHeight, bool maintainAspect, QObject *parent)
+    : QThread(parent)
+    , m_imageItems(imageItems)
+    , m_targetWidth(targetWidth)
+    , m_targetHeight(targetHeight)
+    , m_maintainAspect(maintainAspect)
+{
+}
+
+void ResizeThread::run()
+{
+    // Create temporary directory
+    QTemporaryDir tempDir;
+    if (!tempDir.isValid()) {
+        emit error("Failed to create temporary directory");
+        return;
+    }
+    
+    QString zipPath = tempDir.path() + "/resized_images.zip";
+    
+    // Get selected items
+    QList<ImageItem*> selectedItems;
+    for (ImageItem *item : m_imageItems) {
+        if (item->isSelected()) {
+            selectedItems.append(item);
+        }
+    }
+    
+    if (selectedItems.isEmpty()) {
+        emit error("No images selected for processing");
+        return;
+    }
+    
+    // Create list of files to zip
+    QStringList filesToZip;
+    
+    for (int i = 0; i < selectedItems.size(); ++i) {
+        ImageItem *item = selectedItems[i];
+        QPixmap originalPixmap = item->getOriginalPixmap();
+        
+        if (originalPixmap.isNull()) continue;
+        
+        // Calculate dimensions
+        int newWidth, newHeight;
+        if (m_maintainAspect) {
+            double aspectRatio = static_cast<double>(originalPixmap.width()) / originalPixmap.height();
+            
+            if (static_cast<double>(m_targetWidth) / m_targetHeight > aspectRatio) {
+                newHeight = m_targetHeight;
+                newWidth = static_cast<int>(m_targetHeight * aspectRatio);
+            } else {
+                newWidth = m_targetWidth;
+                newHeight = static_cast<int>(m_targetWidth / aspectRatio);
+            }
+        } else {
+            newWidth = m_targetWidth;
+            newHeight = m_targetHeight;
+        }
+        
+        // Resize pixmap
+        QPixmap resizedPixmap = originalPixmap.scaled(newWidth, newHeight, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        
+        // Save to temporary file
+        QFileInfo fileInfo(item->getFilePath());
+        QString tempImagePath = tempDir.path() + "/" + fileInfo.baseName() + "_resized." + fileInfo.suffix();
+        
+        if (!resizedPixmap.save(tempImagePath)) {
+            emit error(QString("Failed to save resized image: %1").arg(tempImagePath));
+            return;
+        }
+        
+        filesToZip.append(tempImagePath);
+        
+        // Update progress
+        int progressValue = static_cast<int>((i + 1.0) / selectedItems.size() * 100);
+        emit progress(progressValue);
+    }
+    
+    // Create ZIP file using system command
+    QProcess zipProcess;
+    QStringList arguments;
+    
+#ifdef Q_OS_WIN
+    // Use PowerShell on Windows
+    arguments << "-Command";
+    QString powershellCmd = QString("Compress-Archive -Path '%1' -DestinationPath '%2' -Force")
+                           .arg(tempDir.path() + "/*_resized.*")
+                           .arg(zipPath);
+    arguments << powershellCmd;
+    zipProcess.start("powershell", arguments);
+#else
+    // Use zip command on Unix-like systems
+    arguments << "-j" << zipPath; // -j to junk paths (store files in root of zip)
+    arguments << filesToZip;
+    zipProcess.start("zip", arguments);
+#endif
+    
+    if (!zipProcess.waitForStarted()) {
+        // Fallback: copy files to a directory instead
+        QString outputDir = tempDir.path() + "/resized_images";
+        QDir().mkpath(outputDir);
+        
+        for (const QString &file : filesToZip) {
+            QFileInfo fileInfo(file);
+            QString destPath = outputDir + "/" + fileInfo.fileName();
+            QFile::copy(file, destPath);
+        }
+        
+        emit finished(outputDir);
+        return;
+    }
+    
+    if (!zipProcess.waitForFinished(30000)) { // 30 second timeout
+        emit error("ZIP creation timed out");
+        return;
+    }
+    
+    if (zipProcess.exitCode() != 0) {
+        emit error("Failed to create ZIP file");
+        return;
+    }
+    
+    emit finished(zipPath);
+}
+
+#include "ImageResizerApp.moc"
+
+// CMakeLists.txt
+/*
+cmake_minimum_required(VERSION 3.16)
+project(ImageResizerApp)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
+
+qt6_standard_project_setup()
+
+set(SOURCES
+    main.cpp
+    ImageResizerApp.cpp
+)
+
+set(HEADERS
+    ImageResizerApp.h
+)
+
+qt6_add_executable(ImageResizerApp ${SOURCES} ${HEADERS})
+
+target_link_libraries(ImageResizerApp Qt6::Core Qt6::Widgets)
+
+# Enable automatic MOC processing
+set_target_properties(ImageResizerApp PROPERTIES
+    AUTOMOC ON
+)
+*/
+
+// ImageResizerApp.pro (for qmake alternative)
+/*
+QT += core widgets
+
+CONFIG += c++17
+
+TARGET = ImageResizerApp
+TEMPLATE = app
+
+SOURCES += \
+    main.cpp \
+    ImageResizerApp.cpp
+
+HEADERS += \
+    ImageResizerApp.h
+*/
