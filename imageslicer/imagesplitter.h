@@ -59,6 +59,7 @@ private:
     QPushButton *selectAllButton;
     QPushButton *deselectAllButton;
     QComboBox *tileSizeCombo;
+    QCheckBox *uniqueCheckbox;
     QVBoxLayout *layout;
     QWidget *centralWidget;
     int currentTileSize = 16;

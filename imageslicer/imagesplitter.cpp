@@ -7,6 +7,7 @@
 #include <QCryptographicHash>
 #include <QBuffer>
 #include <QHeaderView>
+#include <QVector>
 
 // Static member initialization
 const QRegularExpression SavePreviewDialog::filenameSanitizer("[^\\w.-]");
@@ -47,7 +48,7 @@ void SavePreviewDialog::setupUi(const QList<QPair<QImage, QPair<int, int>>> &til
 
         // Filename
         QLineEdit *filenameEdit = new QLineEdit;
-        filenameEdit->setText(QString("tile_%1_%2.png").arg(coords.first).arg(coords.second));
+        filenameEdit->setText(QString("tile_%1_%2.png").arg(coords.first, 2, 10, QChar('0')).arg(coords.second, 2, 10, QChar('0')));
         previewTable->setCellWidget(i, 2, filenameEdit);
         filenameFields.append(filenameEdit);
 
@@ -123,9 +124,17 @@ void ImageSplitter::setupUi() {
     QHBoxLayout *buttonLayout = new QHBoxLayout;
     buttonLayout->addWidget(selectAllButton);
     buttonLayout->addWidget(deselectAllButton);
+
+    QHBoxLayout *optionLayout = new QHBoxLayout;
+    optionLayout->addWidget(tileSizeCombo);
+    uniqueCheckbox = new QCheckBox;
+    uniqueCheckbox->setText("Unique Tiles");
+    uniqueCheckbox->setChecked(true);
+    optionLayout->addWidget(uniqueCheckbox);
+
     layout->addWidget(loadButton);
     layout->addWidget(imageLabel);
-    layout->addWidget(tileSizeCombo);
+    layout->addLayout(optionLayout);
     layout->addWidget(tileTable);
     layout->addLayout(buttonLayout);
     layout->addWidget(saveButton);
@@ -178,29 +187,27 @@ void ImageSplitter::splitImage() {
     int cols = originalImage.width() / tileSize;
     int rows = originalImage.height() / tileSize;
 
-    QMap<QByteArray, QPair<QImage, QPair<int, int>>> uniqueTiles;
+    QSet<QByteArray> uniqueHashes;
     int duplicateCount = 0;
-
+    QVector <QPair<QImage, QPair<int, int>>> tiles;
     for (int row = 0; row < rows; ++row) {
         for (int col = 0; col < cols; ++col) {
             QImage tile = originalImage.copy(col * tileSize, row * tileSize, tileSize, tileSize);
-            
             QByteArray imageData;
             QBuffer buffer(&imageData);
             buffer.open(QIODevice::WriteOnly);
             tile.save(&buffer, "PNG");
             QByteArray hash = QCryptographicHash::hash(imageData, QCryptographicHash::Sha256);
-
-            if (!uniqueTiles.contains(hash)) {
-                uniqueTiles.insert(hash, qMakePair(tile, qMakePair(row, col)));
+            if (!uniqueHashes.contains(hash) || !uniqueCheckbox->isChecked()) {
+                uniqueHashes.insert(hash);
+                tiles.append(qMakePair(tile, qMakePair(row, col)));
             } else {
                 duplicateCount++;
             }
         }
     }
 
-    QList<QPair<QImage, QPair<int, int>>> uniqueTileList = uniqueTiles.values();
-    int tileCount = uniqueTileList.size();
+    int tileCount = tiles.size();
     if (tileCount == 0) return;
 
     int tableSize = qCeil(qSqrt(static_cast<qreal>(tileCount)));
@@ -213,14 +220,17 @@ void ImageSplitter::splitImage() {
     for (int row = 0; row < tableSize && index < tileCount; ++row) {
         for (int col = 0; col < tableSize && index < tileCount; ++col) {
             if (index >= tileCount) break;
-            const QImage &tile = uniqueTileList[index].first;
-            const QPair<int, int> &coords = uniqueTileList[index].second;
+            const QImage &tile = tiles[index].first;
+            const QPair<int, int> &coords = tiles[index].second;
 
             QLabel *tileLabel = new QLabel;
             tileLabel->setPixmap(QPixmap::fromImage(tile).scaled(2*tileSize, 2*tileSize)); // Use original size without scaling
             tileLabel->setAlignment(Qt::AlignCenter);
 
             QCheckBox *checkBox = new QCheckBox;
+            //QIcon icon;
+            //icon.addPixmap(QPixmap::fromImage(tile).scaled(2*tileSize, 2*tileSize));
+            //checkBox->setIcon(icon);
             checkBox->setProperty("tileImage", QVariant::fromValue(tile));
             checkBox->setProperty("row", coords.first);
             checkBox->setProperty("col", coords.second);
