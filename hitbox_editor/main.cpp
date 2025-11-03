@@ -66,6 +66,7 @@ public:
     GridScene(QObject* parent=nullptr) : QGraphicsScene(parent) {}
 
 protected:
+    /*
     void drawBackground(QPainter *painter, const QRectF &rect) override {
         Q_UNUSED(rect);
         QPen pen(Qt::lightGray);
@@ -83,7 +84,48 @@ protected:
         // Draw horizontal lines
         for(int y = int(bounds.top()); y < bounds.bottom(); y += gridSize)
             painter->drawLine(bounds.left(), y, bounds.right(), y);
+    }*/
+
+    void drawBackground(QPainter *painter, const QRectF &rect)
+    {
+        // Fill background
+       // painter->fillRect(rect, QColor(40, 40, 40)); // adjust background as needed
+
+        const int minorGrid = 8;
+        const int majorGrid = 64;
+
+        QPen minorPen(Qt::lightGray);
+        minorPen.setWidth(0);
+        QPen majorPen(QColor(90, 90, 90));
+
+        // Draw minor grid (every 8 px)
+        qreal left = std::floor(rect.left());
+        qreal top = std::floor(rect.top());
+        qreal right = std::ceil(rect.right());
+        qreal bottom = std::ceil(rect.bottom());
+
+        // Snap to multiples of minor grid
+        int startX = static_cast<int>(left) - (static_cast<int>(left) % minorGrid);
+        int startY = static_cast<int>(top) - (static_cast<int>(top) % minorGrid);
+
+        painter->setPen(minorPen);
+        for (int x = startX; x < right; x += minorGrid)
+            painter->drawLine(x, top, x, bottom);
+        for (int y = startY; y < bottom; y += minorGrid)
+            painter->drawLine(left, y, right, y);
+
+        // Draw major grid (every 64 px)
+        startX = static_cast<int>(left) - (static_cast<int>(left) % majorGrid);
+        startY = static_cast<int>(top) - (static_cast<int>(top) % majorGrid);
+
+        painter->setPen(majorPen);
+        for (int x = startX; x < right; x += majorGrid)
+            painter->drawLine(x, top, x, bottom);
+        for (int y = startY; y < bottom; y += majorGrid)
+            painter->drawLine(left, y, right, y);
     }
+
+
 };
 
 
@@ -210,6 +252,13 @@ public:
         tools->addWidget(showListCheck);
         connect(showListCheck, &QCheckBox::toggled, hbList, &QListWidget::setVisible);
         connect(showListCheck, &QCheckBox::toggled, hbLabel, &QListWidget::setVisible);
+
+
+        QPushButton *importButton = new QPushButton("Import");
+        tools->addWidget(importButton);
+
+        connect(importButton, &QPushButton::clicked, this, &Editor::onImport);
+
     }
 
 protected:
@@ -308,24 +357,67 @@ protected:
 
 private slots:
     void onOpen(){
-        QString f=QFileDialog::getOpenFileName(this,"Open Image",QString(),"Images (*.png *.jpg *.bmp)");
-        if(f.isEmpty())return;
+        QString filePath=QFileDialog::getOpenFileName(this,"Open Image", lastOpenedFolder,"Images (*.png *.jpg *.bmp)");
+        if(filePath.isEmpty())return;
         scene->clear(); hitboxes.clear(); currentPixmapItem=nullptr;
-        currentPixmap=QPixmap(f);
+        currentPixmap=QPixmap(filePath);
         if(currentPixmap.isNull())return;
-        imagePath = f;
+        imagePath = filePath;
         currentPixmapItem=scene->addPixmap(currentPixmap);
         view->fitInView(currentPixmapItem,Qt::KeepAspectRatio);
-        updateHitboxList(); pushUndoState(); pushRedoClear();
+        updateHitboxList();
+        pushUndoState();
+        pushRedoClear();
         setWindowTitle(QFileInfo(imagePath).baseName());
+        lastOpenedFolder = QFileInfo(imagePath).dir().path();
+
+        QFileInfo info(filePath);
+        QString jsonPath = info.path() + "/" + info.completeBaseName() + ".json";
+        QFile file(jsonPath);
+
+        if (file.exists()) {
+            if (file.open(QIODevice::ReadOnly)) {
+                QByteArray data = file.readAll();
+                file.close();
+
+                QJsonDocument doc = QJsonDocument::fromJson(data);
+                if (doc.isObject()) {
+                    QJsonObject root = doc.object();
+                    if (root.contains("hitboxes") && root["hitboxes"].isArray()) {
+                        hitboxes.clear();
+
+                        QJsonArray arr = root["hitboxes"].toArray();
+                        for (const QJsonValue &v : arr) {
+                            QJsonObject o = v.toObject();
+                            HitboxDef hb;
+                            hb.rect = QRect(o["x"].toInt(), o["y"].toInt(), o["w"].toInt(), o["h"].toInt());
+                            hb.type = static_cast<HitboxType>(o["type"].toInt());
+                            hitboxes.append(hb);
+                        }
+
+                        rebuildSceneHitboxes();
+                        updateHitboxList();
+//                        updateSceneHitboxes();
+                        updateHitboxList();
+                        statusBar()->showMessage("Loaded hitboxes from " + jsonPath, 3000);
+                    }
+                }
+            } else {
+                QMessageBox::warning(this, "Warning", "Cannot open " + jsonPath + " for reading.");
+            }
+        }
+
     }
 
     void onSave(){        
-        QString baseName = "hitboxes";
-        if (!imagePath.isEmpty())
-            baseName = QFileInfo(imagePath).baseName();
+        QString jsonPath = "hitboxes.json";
+        if (!imagePath.isEmpty()) {
+            QFileInfo info(imagePath);
+            jsonPath = info.path() + "/" + info.baseName() + ".json";
+ //           baseName = QFileInfo(imagePath).baseName();
+        }
 
-        QString f=QFileDialog::getSaveFileName(this,"Save",baseName + ".json","JSON (*.json)");
+        QString f=QFileDialog::getSaveFileName(this,"Save",jsonPath,"JSON (*.json)");
         if(f.isEmpty())return;
         if (!f.endsWith(".json"))
             f += ".json";
@@ -334,12 +426,22 @@ private slots:
             QJsonObject o; o["x"]=hb.rect.x(); o["y"]=hb.rect.y(); o["w"]=hb.rect.width(); o["h"]=hb.rect.height(); o["type"]=(int)hb.type; arr.append(o);
         }
         QJsonObject root{{"imagePath",imagePath},{"hitboxes",arr}};
-        QFile file(f); if(file.open(QIODevice::WriteOnly)) file.write(QJsonDocument(root).toJson());
+        int frameWidth = 64;
+        int frameHeight = 64;
+        root["frame"] = QJsonObject{
+            {"width", frameWidth},
+            {"height", frameHeight },
+            {"cols", currentPixmap.width() / frameWidth}
+        };
+
+     //   calculateSpriteHitboxes(root, frameWidth, frameHeight);
+        QFile file(f); if(file.open(QIODevice::WriteOnly)) file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+        lastOpenedFolder = QFileInfo(f).dir().path();
     }
 
     void onLoad(){
      //   qDebug("onLoad()");
-        QString f=QFileDialog::getOpenFileName(this,"Load","","JSON (*.json)");
+        QString f=QFileDialog::getOpenFileName(this,"Load", lastOpenedFolder,"JSON (*.json)");
         if(f.isEmpty())return;
         QFile file(f); if(!file.open(QIODevice::ReadOnly))return;
         QJsonDocument doc=QJsonDocument::fromJson(file.readAll()); QJsonObject root=doc.object();
@@ -359,7 +461,76 @@ private slots:
         view->fitInView(currentPixmapItem,Qt::KeepAspectRatio);
         updateHitboxList();
         pushUndoState(); pushRedoClear();
+        lastOpenedFolder = QFileInfo(f).dir().path();
     }
+
+
+    void onImport()
+    {
+        if (!currentPixmapItem || currentPixmapItem->pixmap().isNull()) {
+            QMessageBox::warning(this, "No Image", "You must load an image before importing hitboxes.");
+            return;
+        }
+
+        QString importImagePath = QFileDialog::getOpenFileName(
+            this,
+            "Select Image to Import Hitboxes From",
+            "",
+            "Images (*.png *.jpg *.bmp)"
+            );
+
+        if (importImagePath.isEmpty())
+            return;
+
+        QFileInfo info(importImagePath);
+        QString jsonPath = info.path() + "/" + info.completeBaseName() + ".json";
+
+        QFile file(jsonPath);
+        if (!file.exists()) {
+            QMessageBox::warning(this, "Import Error", "No hitbox JSON found for:\n" + jsonPath);
+            return;
+        }
+        if (!file.open(QIODevice::ReadOnly)) {
+            QMessageBox::warning(this, "Import Error", "Cannot open " + jsonPath);
+            return;
+        }
+
+        QByteArray data = file.readAll();
+        file.close();
+
+        QJsonDocument doc = QJsonDocument::fromJson(data);
+        if (!doc.isObject()) {
+            QMessageBox::warning(this, "Import Error", "Invalid JSON format in:\n" + jsonPath);
+            return;
+        }
+
+        QJsonObject root = doc.object();
+        if (!root.contains("hitboxes") || !root["hitboxes"].isArray()) {
+            QMessageBox::warning(this, "Import Error", "JSON file has no hitbox data.");
+            return;
+        }
+
+        hitboxes.clear();
+        scene->clear();
+        currentPixmapItem=scene->addPixmap(currentPixmap);
+        view->fitInView(currentPixmapItem,Qt::KeepAspectRatio);
+
+        QJsonArray hbArray = root["hitboxes"].toArray();
+        for (const QJsonValue &v : hbArray) {
+            QJsonObject o = v.toObject();
+            HitboxDef hb;
+            hb.rect = QRect(o["x"].toInt(), o["y"].toInt(), o["w"].toInt(), o["h"].toInt());
+            hb.type = static_cast<HitboxType>(o["type"].toInt());
+            hitboxes.append(hb);
+        }
+        rebuildSceneHitboxes();
+        updateHitboxList();
+        pushUndoState();
+        pushRedoClear();
+        updateHitboxList();
+        statusBar()->showMessage("Imported hitboxes from " + info.fileName(), 3000);
+    }
+
 
     void onHitboxSelected(int r){
         QList<QGraphicsItem*> all=scene->items();
@@ -381,6 +552,58 @@ private slots:
     }
 
 private:
+
+    void calculateSpriteHitboxes(QJsonObject & rootObj, int frameWidth, int frameHeight)
+    {
+        // Calculate frame grid
+        int columns = currentPixmap.width() / frameWidth;
+        int rows = currentPixmap.height() / frameHeight;
+
+        struct SpriteFrame {
+            QRect frameRect;             // position of the frame in the spritesheet
+            QVector<HitboxDef> hitboxes; // hitboxes local to this frame
+        };
+
+
+        QVector<SpriteFrame> frames;
+        for (int y = 0; y < rows; ++y)
+            for (int x = 0; x < columns; ++x)
+                frames.append({ QRect(x * frameWidth, y * frameHeight, frameWidth, frameHeight), {} });
+
+        // Assign hitboxes to frames
+        for (const HitboxDef &hb : hitboxes) {
+            QPoint center = hb.rect.center();
+            for (SpriteFrame &frame : frames) {
+                if (frame.frameRect.contains(center)) {
+                    HitboxDef local = hb;
+                    local.rect.translate(-frame.frameRect.topLeft());
+                    frame.hitboxes.append(local);
+                    break;
+                }
+            }
+        }
+
+        // Save per-frame hitbox data
+        QJsonArray framesArray;
+        for (const SpriteFrame &frame : frames) {
+            QJsonObject frameObj;
+            frameObj["rect"] = QJsonArray{ frame.frameRect.x(), frame.frameRect.y(), frame.frameRect.width(), frame.frameRect.height() };
+            QJsonArray frameHitboxes;
+            for (const HitboxDef &hb : frame.hitboxes) {
+                QJsonObject hbObj;
+                hbObj["x"] = hb.rect.x();
+                hbObj["y"] = hb.rect.y();
+                hbObj["w"] = hb.rect.width();
+                hbObj["h"] = hb.rect.height();
+                hbObj["type"] = hb.type;
+                frameHitboxes.append(hbObj);
+            }
+            frameObj["hitboxes"] = frameHitboxes;
+            framesArray.append(frameObj);
+        }
+        rootObj["frames"] = framesArray;
+    }
+
 
     QRect snapToGrid(const QRect &rect) {
       //  qDebug("**************************");
@@ -420,15 +643,9 @@ private:
         status->showMessage(msg);
     }
 
-   // QString currentImagePath() const {
-    //    return currentPixmapItem ? currentPixmap.cacheKey() ? "" : "": "" ;
-   // }
-
     void rebuildSceneHitboxes(){
-     //   qDebug("currentPixmapItem: %p", currentPixmapItem);
         if(!currentPixmapItem) return;
         for(const HitboxDef &hb:hitboxes){
-       //     qDebug("rect: %d, %d [%d] ", hb.rect.x(), hb.rect.y(), hb.type);
             HitboxItem *it=new HitboxItem(hb.rect,hb.type);
             scene->addItem(it);
         }
@@ -549,6 +766,7 @@ private:
     QComboBox *typeCombo; QListWidget *hbList; QStatusBar *status;
     QPoint currPos;
     QString imagePath;
+    QString lastOpenedFolder;
 };
 
 
