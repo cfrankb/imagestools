@@ -65,34 +65,18 @@ class GridScene : public QGraphicsScene {
 public:
     GridScene(QObject* parent=nullptr) : QGraphicsScene(parent) {}
 
+    void setMajorGrid(int size) { majorGrid = size; update(); }
+    void setBackgroundColor(const QColor &color) { backgroundColor = color; update(); }
+
 protected:
-    /*
-    void drawBackground(QPainter *painter, const QRectF &rect) override {
-        Q_UNUSED(rect);
-        QPen pen(Qt::lightGray);
-        pen.setWidth(0);  // thin line
-        painter->setPen(pen);
-
-        int gridSize = 8;
-
-        QRectF bounds = this->sceneRect();
-
-        // Draw vertical lines
-        for(int x = int(bounds.left()); x < bounds.right(); x += gridSize)
-            painter->drawLine(x, bounds.top(), x, bounds.bottom());
-
-        // Draw horizontal lines
-        for(int y = int(bounds.top()); y < bounds.bottom(); y += gridSize)
-            painter->drawLine(bounds.left(), y, bounds.right(), y);
-    }*/
 
     void drawBackground(QPainter *painter, const QRectF &rect)
     {
         // Fill background
-       // painter->fillRect(rect, QColor(40, 40, 40)); // adjust background as needed
+        painter->fillRect(rect, backgroundColor);
 
         const int minorGrid = 8;
-        const int majorGrid = 64;
+        //const int majorGrid = 64;
 
         QPen minorPen(Qt::lightGray);
         minorPen.setWidth(0);
@@ -125,7 +109,9 @@ protected:
             painter->drawLine(left, y, right, y);
     }
 
-
+private:
+    int majorGrid = 64;
+    QColor backgroundColor = QColor(255, 255, 255);
 };
 
 
@@ -258,6 +244,37 @@ public:
         tools->addWidget(importButton);
 
         connect(importButton, &QPushButton::clicked, this, &Editor::onImport);
+
+
+        // Major grid size selector
+        QComboBox *gridSizeCombo = new QComboBox();
+        gridSizeCombo->addItems({"16", "32", "64", "128", "256"});
+        gridSizeCombo->setCurrentText("64");
+        tools->addWidget(new QLabel("Grid:"));
+        tools->addWidget(gridSizeCombo);
+
+        // Background color selector
+        QComboBox *bgColorCombo = new QComboBox();
+        bgColorCombo->addItems({"White", "Dark Gray", "Light Gray",  "Dark Cyan"});
+        tools->addWidget(new QLabel("Background:"));
+        tools->addWidget(bgColorCombo);
+
+        connect(gridSizeCombo, &QComboBox::currentTextChanged, this, [this](const QString &text) {
+            if (!scene) return;
+            scene->setMajorGrid(text.toInt());
+        });
+
+        connect(bgColorCombo, &QComboBox::currentTextChanged, this, [this](const QString &text) {
+            if (!scene) return;
+
+            QColor c = QColor(40, 40, 40); // default dark gray
+            if (text == "Dark Gray") c = QColor(40, 40, 40);
+            else if (text == "Light Gray") c = QColor(200, 200, 200);
+            else if (text == "White") c = QColor(255, 255, 255);
+            else if (text == "Dark Cyan") c = QColor(0,139,139);
+
+            scene->setBackgroundColor(c);
+        });
 
     }
 
@@ -760,10 +777,17 @@ private:
         updateHitboxList();
     }
 
-    QGraphicsView *view; QGraphicsScene *scene; QGraphicsPixmapItem *currentPixmapItem=nullptr;
-    QPixmap currentPixmap; QList<HitboxDef> hitboxes;
-    HitboxItem *creatingRect=nullptr; QPointF startPos;
-    QComboBox *typeCombo; QListWidget *hbList; QStatusBar *status;
+    QGraphicsView *view;
+    GridScene *scene;
+    //QGraphicsScene *scene;
+    QGraphicsPixmapItem *currentPixmapItem=nullptr;
+    QPixmap currentPixmap;
+    QList<HitboxDef> hitboxes;
+    HitboxItem *creatingRect=nullptr;
+    QPointF startPos;
+    QComboBox *typeCombo;
+    QListWidget *hbList;
+    QStatusBar *status;
     QPoint currPos;
     QString imagePath;
     QString lastOpenedFolder;
