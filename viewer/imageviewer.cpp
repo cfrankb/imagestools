@@ -606,8 +606,18 @@ bool ImageViewer::readZipFile(const std::string &zipPath, CFrameSet &images, std
             return false;
         }
 
+        bool isDir = (fileInfo.external_fa & 0x10) != 0;
+        if (isDir)
+            continue;
+
+
         if (!isImageFile(filename)) {
-            LOGW("Skipping unsupported file:%s in archive %s", filename, zipPath.c_str());
+            LOGW("Skipping unsupported file:%s [flag=0x%.8lx] in archive %s", filename, fileInfo.flag, zipPath.c_str());
+            continue;
+        }
+
+        if (fileInfo.compressed_size > 200 * 1024) {
+            LOGW("Skipping large file:%s [%ld] in archive %s", filename, fileInfo.compressed_size, zipPath.c_str());
             continue;
         }
 
