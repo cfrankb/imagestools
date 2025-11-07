@@ -13,8 +13,9 @@ class ThumbnailGrid : public QScrollArea
     Q_OBJECT
 public:
     explicit ThumbnailGrid(QWidget *parent = nullptr);
-    void addThumbnail(const QString &entryName, const QPixmap &pix, qint64 fileSize);
+    void addThumbnail(const QString &entryName, const QImage &img, qint64 fileSize);
     void clear();
+    void setBackgroundColor(const QColor &color);
 
 signals:
     void thumbnailClicked(const QString &entryName);

@@ -6,6 +6,9 @@
 #include <QMessageBox>
 #include <QApplication>
 #include <QKeyEvent>
+#include <QComboBox>
+#include <QToolBar>
+
 
 static const QStringList IMAGE_EXTS = {"png", "jpg", "jpeg", "bmp", "gif", "webp", "zip", "svg"};
 
@@ -66,10 +69,28 @@ MainWindow::MainWindow(QWidget *parent)
         }
     });
 
-
     connect(m_listWidget, &QListWidget::currentRowChanged, this, &MainWindow::onImageSelected);
 
+    // Inside MainWindow constructor:
+    QToolBar *toolbar = addToolBar("View");
+    QComboBox *bgCombo = new QComboBox(this);
+    bgCombo->addItems({ "White", "Dark Gray", "Dark Cyan", "Light Gray", "Black" });
+    toolbar->addWidget(bgCombo);
 
+    // Connect selection to slot
+    connect(bgCombo, &QComboBox::currentTextChanged, this, [this](const QString &colorName) {
+        QColor color;
+        if (colorName == "White") color = Qt::white;
+        else if (colorName == "Dark Gray") color = Qt::darkGray;
+        else if (colorName == "Dark Cyan") color = Qt::darkCyan;
+        else if (colorName == "Light Gray") color = Qt::lightGray;
+        else if (colorName == "Black") color = Qt::black;
+        else color = Qt::white;
+
+        m_thumbGrid->setBackgroundColor(color);
+    });
+
+    m_thumbGrid->setBackgroundColor(Qt::white);
 }
 
 MainWindow::~MainWindow()
@@ -123,10 +144,10 @@ void MainWindow::listFilesFromFolder(const QString &folderPath)
 {
     QDir d(folderPath);
     QFileInfoList entries = d.entryInfoList(QDir::Files | QDir::NoDotAndDotDot, QDir::Name);
-    m_imageFiles.clear();
+    //m_imageFiles.clear();
     for (const QFileInfo &fi : entries)
     {
-        m_imageFiles.append(fi.absoluteFilePath());
+       // m_imageFiles.append(fi.absoluteFilePath());
         QString ext = fi.suffix().toLower();
         if (IMAGE_EXTS.contains(ext))
         {
@@ -140,23 +161,23 @@ void MainWindow::listFilesFromFolder(const QString &folderPath)
 void MainWindow::listFilesFromZip(const QString &zipPath)
 {
     m_zipHandler = new ZipHandler(zipPath, -1, this);
-    const QStringList &images = m_zipHandler->listImageEntries();
-    m_imageFiles = images;
-    for (const QString &entry : images)
+    const QList<ImgInfo> &images = m_zipHandler->listImageEntries();
+   // m_imageFiles = images;
+    for (const ImgInfo &entry : images)
     {
     //   qDebug("entry:%s", entry.toStdString().c_str());
-        QListWidgetItem *it = new QListWidgetItem(entry);
-        it->setData(Qt::UserRole, entry); // store entry name
+        QListWidgetItem *it = new QListWidgetItem(entry.filename);
+        it->setData(Qt::UserRole, entry.filename); // store entry name
         m_listWidget->addItem(it);
     }
     // populate thumbnail grid
     m_thumbGrid->clear();
-    for (const QString &entry : images)
+    for (const ImgInfo &entry : images)
     {
-        QImage thumb = m_zipHandler->loadImageThumbnail(entry, QSize(200, 200));
-        if (!thumb.isNull())
+        QImage img = m_zipHandler->loadImage(entry.filename);
+        if (!img.isNull())
         {
-            m_thumbGrid->addThumbnail(entry, QPixmap::fromImage(thumb),0);
+            m_thumbGrid->addThumbnail(entry.filename, img, entry.fileSize);
         }
     }
 }
@@ -213,7 +234,7 @@ void MainWindow::previewZip(const QString &zipPath)
 
     //std::unique_ptr<ZipHandler> zipHandler(new ZipHandler(zipPath, 500, this));
     m_zipHandler = new ZipHandler(zipPath, 500, this);;
-    const QStringList &images = m_zipHandler->listImageEntries();
+    const QList<ImgInfo> &images = m_zipHandler->listImageEntries();
     /*
     for (const QString &entry : images)
     {
@@ -224,12 +245,13 @@ void MainWindow::previewZip(const QString &zipPath)
 
     // populate thumbnail grid
     m_thumbGrid->clear();
-    for (const QString &entry : images)
+    for (const ImgInfo &entry : images)
     {
-        QImage thumb = m_zipHandler->loadImageThumbnail(entry, QSize(200, 200));
-        if (!thumb.isNull())
+        QImage img = m_zipHandler->loadImage(entry.filename);
+//        QImage thumb = m_zipHandler->loadImageThumbnail(entry.filename, QSize(200, 200));
+        if (!img.isNull())
         {
-            m_thumbGrid->addThumbnail(entry, QPixmap::fromImage(thumb),0);
+            m_thumbGrid->addThumbnail(entry.filename, img, entry.fileSize);
         }
     }
 

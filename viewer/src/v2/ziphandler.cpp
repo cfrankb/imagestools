@@ -43,19 +43,19 @@ bool ZipHandler::openZip()
     int i = 0;
     if (unzGoToFirstFile(uf) == UNZ_OK)
     {
+        char filename_inzip[1024];
+        unz_file_info64 fileInfo;
         do
         {
-            unz_file_info64 fileInfo;
-            char filename_inzip[1024];
             if (unzGetCurrentFileInfo64(uf, &fileInfo, filename_inzip, sizeof(filename_inzip), nullptr, 0, nullptr, 0) == UNZ_OK)
             {
                 QString name = QString::fromUtf8(filename_inzip);
                 QFileInfo fi(name);
                 QString ext = fi.suffix().toLower();
-               // qDebug("name: %s ext:%s", name.toStdString().c_str(), ext.toStdString().c_str());
                 if (IMAGE_EXTS.contains(ext))
                 {
-                    m_entries << name;
+                    qint64 fileSize = fileInfo.uncompressed_size;
+                    m_entries.append({name, fileSize});
                 }
             }
             ++i;
@@ -74,7 +74,7 @@ void ZipHandler::closeZip()
     m_unzHandle = nullptr;
 }
 
-QStringList & ZipHandler::listImageEntries() const
+QList<ImgInfo> & ZipHandler::listImageEntries()
 {
     return m_entries;
 }

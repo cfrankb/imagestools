@@ -14,25 +14,33 @@ ThumbnailGrid::ThumbnailGrid(QWidget *parent)
     setWidgetResizable(true);
 }
 
-void ThumbnailGrid::addThumbnail(const QString &entryName, const QPixmap &pix,  qint64 fileSize)
+void ThumbnailGrid::addThumbnail(const QString &entryName, const QImage &img,  qint64 fileSize)
 {
+    auto formatSize = [](qint64 bytes){
+        if (bytes < 1024)
+            return QString("%1 bytes").arg(bytes);
+        else if (bytes < 1024 * 1024)
+            return QString("%1 KB").arg(bytes / 1024.0, 0, 'f', 1);
+        else if (bytes < 1024LL * 1024LL * 1024LL)
+            return QString("%1 MB").arg(bytes / (1024.0 * 1024.0), 0, 'f', 1);
+        else
+            return QString("%1 GB").arg(bytes / (1024.0 * 1024.0 * 1024.0), 0, 'f', 1);
+    };
+
     QLabel *lbl = new QLabel;
-    lbl->setPixmap(pix.scaled(200, 200, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    lbl->setPixmap(QPixmap::fromImage(img.scaled(200, 200, Qt::KeepAspectRatio, Qt::SmoothTransformation)));
     lbl->setAlignment(Qt::AlignCenter);
     lbl->setFixedSize(220, 220);
     lbl->setFrameStyle(QFrame::StyledPanel | QFrame::Raised);
     lbl->setProperty("entry", entryName);
     lbl->installEventFilter(this);
 
-
-
-
     // Create info text
-    QString info = QString("%1\n%2 x %3")
+    QString info = QString("%1\n%2 x %3\n%4")
                        .arg(QFileInfo(entryName).fileName())
-                       .arg(pix.width())
-                       .arg(pix.height())
-                       ;
+                       .arg(img.width())
+                       .arg(img.height())
+                       .arg(formatSize(fileSize));
 
     QLabel *infoLabel = new QLabel(info);
     infoLabel->setAlignment(Qt::AlignCenter);
@@ -67,26 +75,6 @@ void ThumbnailGrid::clear()
         delete child;
     }
 }
-
-/*
-bool ThumbnailGrid::eventFilter(QObject *watched, QEvent *event)
-{
-    if (event->type() == QEvent::MouseButtonRelease)
-    {
-        QLabel *lbl = qobject_cast<QLabel *>(watched);
-        if (lbl)
-        {
-            QString entry = lbl->property("entry").toString();
-            if (!entry.isEmpty())
-            {
-                emit thumbnailClicked(entry);
-                return true;
-            }
-        }
-    }
-    return QScrollArea::eventFilter(watched, event);
-}
-*/
 
 bool ThumbnailGrid::eventFilter(QObject *watched, QEvent *event)
 {
@@ -144,4 +132,12 @@ void ThumbnailGrid::saveThumbnailAsPng(const QString &entryName)
     }
 }
 
+void ThumbnailGrid::setBackgroundColor(const QColor &color)
+{
+    QPalette pal = this->palette();
+    pal.setColor(QPalette::Window, color);
+    this->setAutoFillBackground(true);
+    this->setPalette(pal);
+    this->update();
+}
 
