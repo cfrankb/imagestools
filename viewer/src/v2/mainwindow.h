@@ -10,6 +10,7 @@
 #include <QToolBar>
 #include <QStringList>
 #include "ziphandler.h"
+#include "archwrap.h"
 #include "imageviewer.h"
 #include "thumbnailgrid.h"
 

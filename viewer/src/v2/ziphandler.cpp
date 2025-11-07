@@ -44,7 +44,7 @@ bool ZipHandler::openZip()
     if (unzGoToFirstFile(uf) == UNZ_OK)
     {
         char filename_inzip[1024];
-        unz_file_info64 fileInfo;
+        unz_file_info64 fileInfo{};
         do
         {
             if (unzGetCurrentFileInfo64(uf, &fileInfo, filename_inzip, sizeof(filename_inzip), nullptr, 0, nullptr, 0) == UNZ_OK)
