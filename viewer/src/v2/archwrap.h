@@ -12,15 +12,17 @@ class ArchWrap : public QObject
 {
     Q_OBJECT
 public:
-    explicit ArchWrap(const QString &zipPath, int limit = -1, QObject *parent = nullptr);
+    explicit ArchWrap(QObject *parent = nullptr);
     ~ArchWrap();
+
+    bool openZip(QString filepath,int limit =-1);
 
     QList<ImgInfo> &listImageEntries();
     QImage loadImage(const QString &entryName); // loads full image (may extract to temp file if >100KB)
+    void clear();
 
 private:
-    int m_limit = -1;
-    bool openZip();
+    bool renewZip();
     void closeZip();
     QByteArray readEntryToMemory(const QString &entryName, qint64 &outUncompressedSize);
     QString extractEntryToTempFile(const QString &entryName);

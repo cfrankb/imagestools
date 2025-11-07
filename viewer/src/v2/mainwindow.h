@@ -42,7 +42,8 @@ private:
     ImageViewer *m_imageViewer;
     ThumbnailGrid *m_thumbGrid;
 
-    ZipHandler *m_zipHandler = nullptr;
+    //ZipHandler *m_zipHandler = nullptr;
+    ArchWrap  *m_zipHandler = nullptr;
     QString m_currentFolder;
     QString m_currentZip;
     QStringList m_imageFiles;

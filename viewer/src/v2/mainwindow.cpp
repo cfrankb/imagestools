@@ -10,7 +10,7 @@
 #include <QToolBar>
 
 
-static const QStringList IMAGE_EXTS = {"png", "jpg", "jpeg", "bmp", "gif", "webp", "zip", "svg"};
+static const QStringList IMAGE_EXTS = {"png", "jpg", "jpeg", "bmp", "gif", "webp", "zip", "svg", "7z", "rar"};
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -89,18 +89,19 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_thumbGrid->setBackgroundColor(Qt::white);
 
-    m_zipHandler = nullptr;
+    m_zipHandler = new ArchWrap(this);
+
 }
 
 MainWindow::~MainWindow()
 {
     clearState();
+    delete m_zipHandler;
 }
 
 void MainWindow::clearState()
 {
-    delete m_zipHandler;
-    m_zipHandler = nullptr;
+    m_zipHandler->clear();
     m_currentFolder.clear();
     m_currentZip.clear();
     m_listWidget->clear();
@@ -158,10 +159,11 @@ void MainWindow::listFilesFromFolder(const QString &folderPath)
 /// when you open a zipfile (in zipfile mode)
 void MainWindow::listFilesFromZip(const QString &zipPath)
 {
-    if (m_zipHandler)
-        delete m_zipHandler;
+    if (!m_zipHandler->openZip(zipPath, -1)) {
+        qDebug("cannot open zip: %s", zipPath.toStdString().c_str());
+        return;
+    }
 
-    m_zipHandler = new ZipHandler(zipPath, -1, this);
     const QList<ImgInfo> &images = m_zipHandler->listImageEntries();
     for (const ImgInfo &entry : images)
     {
@@ -201,10 +203,11 @@ void MainWindow::onListItemActivated(QListWidgetItem *item)
     }
     else if (!m_currentFolder.isEmpty())
     {
+        QStringList ARCH_EXT = {"zip", "7z", "rar"};
         QString path = item->data(Qt::UserRole).toString();
         // add grid logic here
         QFileInfo fi(path);
-        if (fi.suffix().toLower() == "zip") {
+        if (ARCH_EXT.contains(fi.suffix().toLower())) {
             previewZip(path);
             return;
         }
@@ -226,10 +229,11 @@ void MainWindow::onListItemActivated(QListWidgetItem *item)
 /// when you select a zip file in the list on the left
 void MainWindow::previewZip(const QString &zipPath)
 {
-    if (m_zipHandler)
-        delete m_zipHandler;
+    if (!m_zipHandler->openZip(zipPath, 500)) {
+        qDebug("cannot open zip: %s", zipPath.toStdString().c_str());
+        return;
+    }
 
-    m_zipHandler = new ZipHandler(zipPath, 500, this);;
     const QList<ImgInfo> &images = m_zipHandler->listImageEntries();
 
     // populate thumbnail grid
