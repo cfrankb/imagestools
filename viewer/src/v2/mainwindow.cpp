@@ -4,6 +4,8 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QMessageBox>
+#include <QApplication>
+#include <QKeyEvent>
 
 static const QStringList IMAGE_EXTS = {"png", "jpg", "jpeg", "bmp", "gif", "webp", "zip", "svg"};
 
@@ -65,6 +67,9 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
 
+    connect(m_listWidget, &QListWidget::currentRowChanged, this, &MainWindow::onImageSelected);
+
+
 }
 
 MainWindow::~MainWindow()
@@ -85,7 +90,7 @@ void MainWindow::clearState()
 
 void MainWindow::openFolder()
 {
-    QString dir = QFileDialog::getExistingDirectory(this, "Open Folder", QString(),
+    QString dir = QFileDialog::getExistingDirectory(this, "Open Folder", m_currentFolder,
                                                     QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
     if (dir.isEmpty())
         return;
@@ -93,26 +98,35 @@ void MainWindow::openFolder()
     m_currentFolder = dir;
     listFilesFromFolder(dir);
     m_rightStack->setCurrentWidget(m_imageViewer);
+
+    m_mode = Mode::FolderMode;
 }
 
 void MainWindow::openZip()
 {
-    QString zip = QFileDialog::getOpenFileName(this, "Open ZIP File", QString(), "Zip files (*.zip)");
+    QString zip = QFileDialog::getOpenFileName(this, "Open ZIP File", m_currentFolder, "Zip files (*.zip)");
     if (zip.isEmpty())
         return;
+    qDebug("zip: %s", zip.toStdString().c_str());
     clearState();
     m_currentZip = zip;
+    QFileInfo fi(zip);
+    m_currentFolder = fi.dir().path();
     listFilesFromZip(zip);
     // Show thumbnails by default when a ZIP is opened.
     m_rightStack->setCurrentWidget(m_thumbGrid);
+
+    m_mode = Mode::ZipMode;
 }
 
 void MainWindow::listFilesFromFolder(const QString &folderPath)
 {
     QDir d(folderPath);
     QFileInfoList entries = d.entryInfoList(QDir::Files | QDir::NoDotAndDotDot, QDir::Name);
+    m_imageFiles.clear();
     for (const QFileInfo &fi : entries)
     {
+        m_imageFiles.append(fi.absoluteFilePath());
         QString ext = fi.suffix().toLower();
         if (IMAGE_EXTS.contains(ext))
         {
@@ -127,8 +141,10 @@ void MainWindow::listFilesFromZip(const QString &zipPath)
 {
     m_zipHandler = new ZipHandler(zipPath, -1, this);
     QStringList images = m_zipHandler->listImageEntries();
+    m_imageFiles = images;
     for (const QString &entry : images)
     {
+    //   qDebug("entry:%s", entry.toStdString().c_str());
         QListWidgetItem *it = new QListWidgetItem(entry);
         it->setData(Qt::UserRole, entry); // store entry name
         m_listWidget->addItem(it);
@@ -244,5 +260,53 @@ void MainWindow::showImageFromZip(const QString &entryName)
     else
     {
         QMessageBox::warning(this, "Image load failed", "Could not load image from ZIP: " + entryName);
+    }
+}
+
+void MainWindow::onImageSelected(int row)
+{
+    if (row < 0) return;
+    //qDebug("row: %d", row);
+
+
+    m_listWidget->setCurrentRow(row);
+    QListWidgetItem* item = m_listWidget->currentItem();
+    onListItemActivated(item);
+
+    /*
+
+    return;
+    QString filePath = m_imageFiles[row];  // e.g. a QStringList you store
+
+    QImage img;
+    if (m_mode == Mode::ZipMode && m_zipHandler) {
+         img = m_zipHandler->loadImage(filePath);
+    } else if (m_mode == Mode::FolderMode) {
+        img = QImage(filePath);
+    }
+
+    if (!img.isNull())
+    {
+        m_imageViewer->setImage(img);
+    } else {
+         QMessageBox::warning(this, "Image load failed", "Could not load image: " + filePath);
+        m_imageViewer->clear();
+    }
+
+  //  m_imageViewer->loadImage(filePath);
+*/
+}
+
+void MainWindow::keyPressEvent(QKeyEvent *event)
+{
+    switch (event->key()) {
+    case Qt::Key_Up:
+    case Qt::Key_Down:
+    case Qt::Key_Left:
+    case Qt::Key_Right:
+        QApplication::sendEvent(m_listWidget, event);
+        return;
+    default:
+        QMainWindow::keyPressEvent(event);
     }
 }

@@ -52,13 +52,14 @@ bool ZipHandler::openZip()
                 QString name = QString::fromUtf8(filename_inzip);
                 QFileInfo fi(name);
                 QString ext = fi.suffix().toLower();
+               // qDebug("name: %s ext:%s", name.toStdString().c_str(), ext.toStdString().c_str());
                 if (IMAGE_EXTS.contains(ext))
                 {
                     m_entries << name;
                 }
             }
             ++i;
-            if (i > 0 && i >= m_limit) break;
+            if (m_limit > 0 && i >= m_limit) break;
         } while (unzGoToNextFile(uf) == UNZ_OK);
     }
     return true;

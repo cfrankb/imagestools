@@ -8,6 +8,7 @@
 #include <QAction>
 #include <QMenuBar>
 #include <QToolBar>
+#include <QStringList>
 #include "ziphandler.h"
 #include "imageviewer.h"
 #include "thumbnailgrid.h"
@@ -30,7 +31,10 @@ private:
     void listFilesFromZip(const QString &zipPath);
     void clearState();
     void previewZip(const QString &zipPath);
+    void onImageSelected(int row);
 
+
+    void keyPressEvent(QKeyEvent *event) override;
 
     QListWidget *m_listWidget;
     QStackedWidget *m_rightStack;
@@ -40,6 +44,14 @@ private:
     ZipHandler *m_zipHandler = nullptr;
     QString m_currentFolder;
     QString m_currentZip;
+    QStringList m_imageFiles;
+
+    enum Mode {
+        FolderMode,
+        ZipMode
+    };
+
+    Mode m_mode;
 };
 
 #endif // MAINWINDOW_H
