@@ -74,7 +74,7 @@ void ZipHandler::closeZip()
     m_unzHandle = nullptr;
 }
 
-QStringList ZipHandler::listImageEntries() const
+QStringList & ZipHandler::listImageEntries() const
 {
     return m_entries;
 }

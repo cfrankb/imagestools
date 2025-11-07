@@ -13,7 +13,7 @@ public:
     explicit ZipHandler(const QString &zipPath, int limit=-1, QObject *parent = nullptr);
     ~ZipHandler();
 
-    QStringList listImageEntries() const;
+    QStringList & listImageEntries() const;
     QImage loadImage(const QString &entryName);                                // loads full image (may extract to temp file if >100KB)
     QImage loadImageThumbnail(const QString &entryName, const QSize &maxSize); // scaled thumbnail
 

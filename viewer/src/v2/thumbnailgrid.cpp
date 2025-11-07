@@ -14,7 +14,7 @@ ThumbnailGrid::ThumbnailGrid(QWidget *parent)
     setWidgetResizable(true);
 }
 
-void ThumbnailGrid::addThumbnail(const QString &entryName, const QPixmap &pix)
+void ThumbnailGrid::addThumbnail(const QString &entryName, const QPixmap &pix,  qint64 fileSize)
 {
     QLabel *lbl = new QLabel;
     lbl->setPixmap(pix.scaled(200, 200, Qt::KeepAspectRatio, Qt::SmoothTransformation));
@@ -24,10 +24,35 @@ void ThumbnailGrid::addThumbnail(const QString &entryName, const QPixmap &pix)
     lbl->setProperty("entry", entryName);
     lbl->installEventFilter(this);
 
+
+
+
+    // Create info text
+    QString info = QString("%1\n%2 x %3")
+                       .arg(QFileInfo(entryName).fileName())
+                       .arg(pix.width())
+                       .arg(pix.height())
+                       ;
+
+    QLabel *infoLabel = new QLabel(info);
+    infoLabel->setAlignment(Qt::AlignCenter);
+    infoLabel->setWordWrap(true);
+
+    // Stack the image and text vertically
+    QVBoxLayout *vbox = new QVBoxLayout;
+    vbox->setContentsMargins(2, 2, 2, 2);
+    vbox->addWidget(lbl);
+    vbox->addWidget(infoLabel);
+
+    QWidget *container = new QWidget;
+    container->setLayout(vbox);
+
+
     int count = m_labelMap.size();
     int row = count / m_columns;
     int col = count % m_columns;
-    m_layout->addWidget(lbl, row, col);
+    //m_layout->addWidget(lbl, row, col);
+    m_layout->addWidget(container, row, col);
     m_labelMap.insert(entryName, lbl);
 }
 

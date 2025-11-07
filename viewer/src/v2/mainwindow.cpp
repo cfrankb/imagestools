@@ -140,7 +140,7 @@ void MainWindow::listFilesFromFolder(const QString &folderPath)
 void MainWindow::listFilesFromZip(const QString &zipPath)
 {
     m_zipHandler = new ZipHandler(zipPath, -1, this);
-    QStringList images = m_zipHandler->listImageEntries();
+    const QStringList &images = m_zipHandler->listImageEntries();
     m_imageFiles = images;
     for (const QString &entry : images)
     {
@@ -156,7 +156,7 @@ void MainWindow::listFilesFromZip(const QString &zipPath)
         QImage thumb = m_zipHandler->loadImageThumbnail(entry, QSize(200, 200));
         if (!thumb.isNull())
         {
-            m_thumbGrid->addThumbnail(entry, QPixmap::fromImage(thumb));
+            m_thumbGrid->addThumbnail(entry, QPixmap::fromImage(thumb),0);
         }
     }
 }
@@ -204,6 +204,8 @@ void MainWindow::onListItemActivated(QListWidgetItem *item)
     }
 }
 
+/// show zip content in preview pane (on the right)
+/// when you select a zip file in the list on the left
 void MainWindow::previewZip(const QString &zipPath)
 {
     if (m_zipHandler)
@@ -211,7 +213,7 @@ void MainWindow::previewZip(const QString &zipPath)
 
     //std::unique_ptr<ZipHandler> zipHandler(new ZipHandler(zipPath, 500, this));
     m_zipHandler = new ZipHandler(zipPath, 500, this);;
-    QStringList images = m_zipHandler->listImageEntries();
+    const QStringList &images = m_zipHandler->listImageEntries();
     /*
     for (const QString &entry : images)
     {
@@ -227,7 +229,7 @@ void MainWindow::previewZip(const QString &zipPath)
         QImage thumb = m_zipHandler->loadImageThumbnail(entry, QSize(200, 200));
         if (!thumb.isNull())
         {
-            m_thumbGrid->addThumbnail(entry, QPixmap::fromImage(thumb));
+            m_thumbGrid->addThumbnail(entry, QPixmap::fromImage(thumb),0);
         }
     }
 
@@ -266,35 +268,9 @@ void MainWindow::showImageFromZip(const QString &entryName)
 void MainWindow::onImageSelected(int row)
 {
     if (row < 0) return;
-    //qDebug("row: %d", row);
-
-
     m_listWidget->setCurrentRow(row);
     QListWidgetItem* item = m_listWidget->currentItem();
     onListItemActivated(item);
-
-    /*
-
-    return;
-    QString filePath = m_imageFiles[row];  // e.g. a QStringList you store
-
-    QImage img;
-    if (m_mode == Mode::ZipMode && m_zipHandler) {
-         img = m_zipHandler->loadImage(filePath);
-    } else if (m_mode == Mode::FolderMode) {
-        img = QImage(filePath);
-    }
-
-    if (!img.isNull())
-    {
-        m_imageViewer->setImage(img);
-    } else {
-         QMessageBox::warning(this, "Image load failed", "Could not load image: " + filePath);
-        m_imageViewer->clear();
-    }
-
-  //  m_imageViewer->loadImage(filePath);
-*/
 }
 
 void MainWindow::keyPressEvent(QKeyEvent *event)
