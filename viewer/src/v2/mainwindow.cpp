@@ -48,9 +48,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(actOpenZip, &QAction::triggered, this, &MainWindow::openZip);
 //    connect(m_listWidget, &QListWidget::itemActivated, this, &MainWindow::onListItemActivated);
     connect(m_listWidget, &QListWidget::itemClicked, this, &MainWindow::onListItemActivated);
-
     connect(m_thumbGrid, &ThumbnailGrid::thumbnailClicked, this, &MainWindow::showImageFromZip);
-
     connect(m_thumbGrid, &ThumbnailGrid::requestSaveOriginal, this, [this](const QString &entryName) {
         if (!m_zipHandler) return;
 
@@ -86,11 +84,12 @@ MainWindow::MainWindow(QWidget *parent)
         else if (colorName == "Light Gray") color = Qt::lightGray;
         else if (colorName == "Black") color = Qt::black;
         else color = Qt::white;
-
         m_thumbGrid->setBackgroundColor(color);
     });
 
     m_thumbGrid->setBackgroundColor(Qt::white);
+
+    m_zipHandler = nullptr;
 }
 
 MainWindow::~MainWindow()
@@ -144,10 +143,8 @@ void MainWindow::listFilesFromFolder(const QString &folderPath)
 {
     QDir d(folderPath);
     QFileInfoList entries = d.entryInfoList(QDir::Files | QDir::NoDotAndDotDot, QDir::Name);
-    //m_imageFiles.clear();
     for (const QFileInfo &fi : entries)
     {
-       // m_imageFiles.append(fi.absoluteFilePath());
         QString ext = fi.suffix().toLower();
         if (IMAGE_EXTS.contains(ext))
         {
@@ -158,14 +155,16 @@ void MainWindow::listFilesFromFolder(const QString &folderPath)
     }
 }
 
+/// when you open a zipfile (in zipfile mode)
 void MainWindow::listFilesFromZip(const QString &zipPath)
 {
+    if (m_zipHandler)
+        delete m_zipHandler;
+
     m_zipHandler = new ZipHandler(zipPath, -1, this);
     const QList<ImgInfo> &images = m_zipHandler->listImageEntries();
-   // m_imageFiles = images;
     for (const ImgInfo &entry : images)
     {
-    //   qDebug("entry:%s", entry.toStdString().c_str());
         QListWidgetItem *it = new QListWidgetItem(entry.filename);
         it->setData(Qt::UserRole, entry.filename); // store entry name
         m_listWidget->addItem(it);
@@ -202,9 +201,7 @@ void MainWindow::onListItemActivated(QListWidgetItem *item)
     }
     else if (!m_currentFolder.isEmpty())
     {
-
         QString path = item->data(Qt::UserRole).toString();
-
         // add grid logic here
         QFileInfo fi(path);
         if (fi.suffix().toLower() == "zip") {
@@ -232,23 +229,14 @@ void MainWindow::previewZip(const QString &zipPath)
     if (m_zipHandler)
         delete m_zipHandler;
 
-    //std::unique_ptr<ZipHandler> zipHandler(new ZipHandler(zipPath, 500, this));
     m_zipHandler = new ZipHandler(zipPath, 500, this);;
     const QList<ImgInfo> &images = m_zipHandler->listImageEntries();
-    /*
-    for (const QString &entry : images)
-    {
-        QListWidgetItem *it = new QListWidgetItem(entry);
-        it->setData(Qt::UserRole, entry); // store entry name
-        m_listWidget->addItem(it);
-    }*/
 
     // populate thumbnail grid
     m_thumbGrid->clear();
     for (const ImgInfo &entry : images)
     {
         QImage img = m_zipHandler->loadImage(entry.filename);
-//        QImage thumb = m_zipHandler->loadImageThumbnail(entry.filename, QSize(200, 200));
         if (!img.isNull())
         {
             m_thumbGrid->addThumbnail(entry.filename, img, entry.fileSize);
@@ -257,7 +245,6 @@ void MainWindow::previewZip(const QString &zipPath)
 
     // Show thumbnails by default when a ZIP is opened.
     m_rightStack->setCurrentWidget(m_thumbGrid);
-
 }
 
 
