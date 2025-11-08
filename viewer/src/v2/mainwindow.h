@@ -37,6 +37,8 @@ private:
 
     void keyPressEvent(QKeyEvent *event) override;
 
+    QStatusBar *m_statusBar;
+    QProgressBar *m_progressBar;
     QListWidget *m_listWidget;
     QStackedWidget *m_rightStack;
     ImageViewer *m_imageViewer;

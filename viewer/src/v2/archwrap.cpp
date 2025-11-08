@@ -41,7 +41,7 @@ bool ArchWrap::renewZip()
     return true;
 }
 
-bool ArchWrap::openZip(QString filepath,int limit)
+bool ArchWrap::openZip(QString filepath, QProgressBar *progressBar, int limit)
 {
     auto extractTmp = [this](const char *entryName, const size_t size)
     {
@@ -80,14 +80,35 @@ bool ArchWrap::openZip(QString filepath,int limit)
         return false;;
     }
 
+    struct archive_entry *entry;
     m_zipPath = filepath;
+    QByteArray pathUtf8 = m_zipPath.toUtf8();
+
+    if (archive_read_open_filename(m_arch, pathUtf8.constData(), 10240) != ARCHIVE_OK)
+    {
+        std::cerr << "Failed to open archive: " << archive_error_string(m_arch) << "\n";
+        return false;
+    }
+
+    qint64 totalBytes = 0;
+    while (archive_read_next_header(m_arch, &entry) == ARCHIVE_OK) {
+        totalBytes += archive_entry_size(entry);
+        archive_read_data_skip(m_arch);
+    }
+
+    archive_read_free(m_arch);
+    if (!renewZip()) {
+        return false;;
+    }
+
+    qint64 processedBytes = 0;
+    qint64 lastReported = 0;
 
     qDebug("new ArchWrap: %s", m_zipPath.toStdString().c_str());
 
     m_entries.clear();
     m_index.clear();
 
-    QByteArray pathUtf8 = m_zipPath.toUtf8();
     if (archive_read_open_filename(m_arch, pathUtf8.constData(), 10240) != ARCHIVE_OK)
     {
         std::cerr << "Failed to open archive: " << archive_error_string(m_arch) << "\n";
@@ -95,7 +116,7 @@ bool ArchWrap::openZip(QString filepath,int limit)
     }
 
     int i = 0;
-    struct archive_entry *entry;
+
     while (archive_read_next_header(m_arch, &entry) == ARCHIVE_OK)
     {
         const char *name = archive_entry_pathname(entry);
@@ -113,11 +134,25 @@ bool ArchWrap::openZip(QString filepath,int limit)
             }
             m_entries.append({name, (qint64)size});
             m_index.insert(name, tmpFile);
+
+            processedBytes += size;
+            if (totalBytes > 0 && processedBytes - lastReported > 64 * 1024) {
+                int percent = int((processedBytes * 100) / totalBytes);
+                emit progressChanged(percent);
+                if (progressBar)
+                    progressBar->setValue(percent);
+                lastReported = processedBytes;
+            }
+
         }
         ++i;
         if (limit > 0 && i >= limit)
             break;
     }
+    emit progressChanged(100);
+    if (progressBar)
+        progressBar->setValue(100);
+
     return true;
 }
 

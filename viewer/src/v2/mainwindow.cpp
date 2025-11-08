@@ -8,6 +8,7 @@
 #include <QKeyEvent>
 #include <QComboBox>
 #include <QToolBar>
+#include <QStatusBar>
 
 
 static const QStringList IMAGE_EXTS = {"png", "jpg", "jpeg", "bmp", "gif", "webp", "zip", "svg", "7z", "rar"};
@@ -91,6 +92,27 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_zipHandler = new ArchWrap(this);
 
+
+    // ✅ Create or use existing status bar
+    m_statusBar = new QStatusBar(this);
+    setStatusBar(m_statusBar);
+    m_statusBar->showMessage("Ready");
+
+    // Example: show current mode
+    connect(m_listWidget, &QListWidget::currentTextChanged, this, [this](const QString &name){
+        m_statusBar->showMessage(QString("Selected: %1").arg(name));
+    });
+
+    m_progressBar = new QProgressBar;
+    m_progressBar->setRange(0, 100);
+    m_progressBar->setValue(0);
+    statusBar()->addPermanentWidget(m_progressBar);
+    //ArchiveExtractor *extractor = new ArchiveExtractor(this);
+    connect(m_zipHandler, &ArchWrap::progressChanged, m_progressBar, &QProgressBar::setValue);
+    connect(m_zipHandler, &ArchWrap::finished, [this](){
+        m_progressBar->setValue(100);
+    });
+
 }
 
 MainWindow::~MainWindow()
@@ -159,7 +181,7 @@ void MainWindow::listFilesFromFolder(const QString &folderPath)
 /// when you open a zipfile (in zipfile mode)
 void MainWindow::listFilesFromZip(const QString &zipPath)
 {
-    if (!m_zipHandler->openZip(zipPath, -1)) {
+    if (!m_zipHandler->openZip(zipPath, m_progressBar, -1)) {
         qDebug("cannot open zip: %s", zipPath.toStdString().c_str());
         return;
     }
@@ -181,6 +203,7 @@ void MainWindow::listFilesFromZip(const QString &zipPath)
             m_thumbGrid->addThumbnail(entry.filename, img, entry.fileSize);
         }
     }
+
 }
 
 void MainWindow::onListItemActivated(QListWidgetItem *item)
@@ -229,7 +252,8 @@ void MainWindow::onListItemActivated(QListWidgetItem *item)
 /// when you select a zip file in the list on the left
 void MainWindow::previewZip(const QString &zipPath)
 {
-    if (!m_zipHandler->openZip(zipPath, 500)) {
+    m_statusBar->showMessage("caching files");
+    if (!m_zipHandler->openZip(zipPath, m_progressBar, 500)) {
         qDebug("cannot open zip: %s", zipPath.toStdString().c_str());
         return;
     }
@@ -237,15 +261,24 @@ void MainWindow::previewZip(const QString &zipPath)
     const QList<ImgInfo> &images = m_zipHandler->listImageEntries();
 
     // populate thumbnail grid
+    m_statusBar->showMessage("populate thumbnail grid");
     m_thumbGrid->clear();
+    size_t i = 0;
     for (const ImgInfo &entry : images)
     {
+        size_t progress = 100 * i / images.size();
+        m_progressBar->setValue(progress);
+
         QImage img = m_zipHandler->loadImage(entry.filename);
         if (!img.isNull())
         {
             m_thumbGrid->addThumbnail(entry.filename, img, entry.fileSize);
         }
+        ++i;
     }
+
+    m_statusBar->showMessage("");
+    m_progressBar->setValue(100);
 
     // Show thumbnails by default when a ZIP is opened.
     m_rightStack->setCurrentWidget(m_thumbGrid);
