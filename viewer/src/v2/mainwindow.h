@@ -43,6 +43,7 @@ private:
     QStackedWidget *m_rightStack;
     ImageViewer *m_imageViewer;
     ThumbnailGrid *m_thumbGrid;
+    QHBoxLayout *m_layout;
 
     //ZipHandler *m_zipHandler = nullptr;
     ArchWrap  *m_zipHandler = nullptr;

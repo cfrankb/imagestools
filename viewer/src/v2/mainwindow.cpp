@@ -19,7 +19,7 @@ MainWindow::MainWindow(QWidget *parent)
     resize(1000, 700);
 
     auto central = new QWidget(this);
-    auto layout = new QHBoxLayout(central);
+    m_layout = new QHBoxLayout(central);
 
     QSplitter *splitter = new QSplitter(central);
     m_listWidget = new QListWidget(splitter);
@@ -36,7 +36,7 @@ MainWindow::MainWindow(QWidget *parent)
     splitter->addWidget(m_rightStack);
     splitter->setStretchFactor(1, 1);
 
-    layout->addWidget(splitter);
+    m_layout->addWidget(splitter);
     setCentralWidget(central);
 
     // actions
@@ -47,7 +47,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(actOpenFolder, &QAction::triggered, this, &MainWindow::openFolder);
     connect(actOpenZip, &QAction::triggered, this, &MainWindow::openZip);
-//    connect(m_listWidget, &QListWidget::itemActivated, this, &MainWindow::onListItemActivated);
+    connect(m_listWidget, &QListWidget::itemActivated, this, &MainWindow::onListItemActivated);
     connect(m_listWidget, &QListWidget::itemClicked, this, &MainWindow::onListItemActivated);
     connect(m_thumbGrid, &ThumbnailGrid::thumbnailClicked, this, &MainWindow::showImageFromZip);
     connect(m_thumbGrid, &ThumbnailGrid::requestSaveOriginal, this, [this](const QString &entryName) {
@@ -68,7 +68,7 @@ MainWindow::MainWindow(QWidget *parent)
         }
     });
 
-    connect(m_listWidget, &QListWidget::currentRowChanged, this, &MainWindow::onImageSelected);
+ //   connect(m_listWidget, &QListWidget::currentRowChanged, this, &MainWindow::onImageSelected);
 
     // Inside MainWindow constructor:
     QToolBar *toolbar = addToolBar("View");
@@ -86,9 +86,11 @@ MainWindow::MainWindow(QWidget *parent)
         else if (colorName == "Black") color = Qt::black;
         else color = Qt::white;
         m_thumbGrid->setBackgroundColor(color);
+        m_imageViewer->setBackgroundColor(color);
     });
 
     m_thumbGrid->setBackgroundColor(Qt::white);
+    m_imageViewer->setBackgroundColor(Qt::white);
 
     m_zipHandler = new ArchWrap(this);
 
@@ -113,6 +115,31 @@ MainWindow::MainWindow(QWidget *parent)
         m_progressBar->setValue(100);
     });
 
+
+    connect(m_imageViewer, &ImageViewer::requestSaveOriginal, this, [this](const QString &entryName, bool fromZip) {
+        if (!m_zipHandler) return;
+
+        qDebug("entryName: %s", entryName.toStdString().c_str());
+        QImage fullImg;
+        if (fromZip) {
+            fullImg = m_zipHandler->loadImage(entryName);
+        } else  {
+            fullImg = QImage(entryName);
+        }
+
+        if (fullImg.isNull()) {
+            QMessageBox::warning(this, "Save Image", "Failed to load original image from ZIP.");
+            return;
+        }
+
+        QString defaultName = QFileInfo(entryName).fileName();
+        QString filePath = QFileDialog::getSaveFileName(this, "Save Original Image As", defaultName, "PNG Images (*.png)");
+        if (filePath.isEmpty()) return;
+
+        if (!fullImg.save(filePath, "PNG")) {
+            QMessageBox::warning(this, "Save Image", "Failed to save PNG file.");
+        }
+    });
 }
 
 MainWindow::~MainWindow()
@@ -216,7 +243,7 @@ void MainWindow::onListItemActivated(QListWidgetItem *item)
         QImage img = m_zipHandler->loadImage(entry);
         if (!img.isNull())
         {
-            m_imageViewer->setImage(img);
+            m_imageViewer->setImage(img, entry, true);
             m_rightStack->setCurrentWidget(m_imageViewer);
         }
         else
@@ -238,7 +265,7 @@ void MainWindow::onListItemActivated(QListWidgetItem *item)
         QImage img(path);
         if (!img.isNull())
         {
-            m_imageViewer->setImage(img);
+            m_imageViewer->setImage(img, path, false);
             m_rightStack->setCurrentWidget(m_imageViewer);
         }
         else
@@ -264,6 +291,10 @@ void MainWindow::previewZip(const QString &zipPath)
     m_statusBar->showMessage("populate thumbnail grid");
     m_thumbGrid->clear();
     size_t i = 0;
+
+    m_listWidget->setEnabled(false);
+    m_layout->setEnabled(false);
+
     for (const ImgInfo &entry : images)
     {
         size_t progress = 100 * i / images.size();
@@ -276,6 +307,9 @@ void MainWindow::previewZip(const QString &zipPath)
         }
         ++i;
     }
+
+    m_layout->setEnabled(true);
+    m_listWidget->setEnabled(true);
 
     m_statusBar->showMessage("");
     m_progressBar->setValue(100);
@@ -292,7 +326,7 @@ void MainWindow::showImageFromZip(const QString &entryName)
     QImage img = m_zipHandler->loadImage(entryName);
     if (!img.isNull())
     {
-        m_imageViewer->setImage(img);
+        m_imageViewer->setImage(img, entryName, true);
         m_rightStack->setCurrentWidget(m_imageViewer);
         // select corresponding item in list if present
         for (int i = 0; i < m_listWidget->count(); ++i)
@@ -314,7 +348,7 @@ void MainWindow::showImageFromZip(const QString &entryName)
 void MainWindow::onImageSelected(int row)
 {
     if (row < 0) return;
-    m_listWidget->setCurrentRow(row);
+    //m_listWidget->setCurrentRow(row);
     QListWidgetItem* item = m_listWidget->currentItem();
     onListItemActivated(item);
 }
