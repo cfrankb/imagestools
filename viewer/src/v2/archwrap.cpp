@@ -156,8 +156,6 @@ bool ArchWrap::openZip(QString filepath, QProgressBar *progressBar, int limit)
     return true;
 }
 
-
-
 void ArchWrap::closeZip()
 {
     if (m_arch)

@@ -28,7 +28,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_rightStack = new QStackedWidget(splitter);
     m_imageViewer = new ImageViewer;
-    m_thumbGrid = new ThumbnailGrid;
+    m_thumbGrid = new ThumbnailView;//  new ThumbnailGrid;
     m_rightStack->addWidget(m_imageViewer); // index 0
     m_rightStack->addWidget(m_thumbGrid);   // index 1
 
@@ -49,25 +49,6 @@ MainWindow::MainWindow(QWidget *parent)
     connect(actOpenZip, &QAction::triggered, this, &MainWindow::openZip);
     connect(m_listWidget, &QListWidget::itemActivated, this, &MainWindow::onListItemActivated);
     connect(m_listWidget, &QListWidget::itemClicked, this, &MainWindow::onListItemActivated);
-    connect(m_thumbGrid, &ThumbnailGrid::thumbnailClicked, this, &MainWindow::showImageFromZip);
-    connect(m_thumbGrid, &ThumbnailGrid::requestSaveOriginal, this, [this](const QString &entryName) {
-        if (!m_zipHandler) return;
-
-        QImage fullImg = m_zipHandler->loadImage(entryName);
-        if (fullImg.isNull()) {
-            QMessageBox::warning(this, "Save Image", "Failed to load original image from ZIP.");
-            return;
-        }
-
-        QString defaultName = QFileInfo(entryName).fileName();
-        QString filePath = QFileDialog::getSaveFileName(this, "Save Original Image As", defaultName, "PNG Images (*.png)");
-        if (filePath.isEmpty()) return;
-
-        if (!fullImg.save(filePath, "PNG")) {
-            QMessageBox::warning(this, "Save Image", "Failed to save PNG file.");
-        }
-    });
-
  //   connect(m_listWidget, &QListWidget::currentRowChanged, this, &MainWindow::onImageSelected);
 
     // Inside MainWindow constructor:
@@ -78,6 +59,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     // Connect selection to slot
     connect(bgCombo, &QComboBox::currentTextChanged, this, [this](const QString &colorName) {
+        qDebug("color: %s", colorName.toStdString().c_str());
         QColor color;
         if (colorName == "White") color = Qt::white;
         else if (colorName == "Dark Gray") color = Qt::darkGray;
@@ -91,7 +73,6 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_thumbGrid->setBackgroundColor(Qt::white);
     m_imageViewer->setBackgroundColor(Qt::white);
-
     m_zipHandler = new ArchWrap(this);
 
 
@@ -140,6 +121,34 @@ MainWindow::MainWindow(QWidget *parent)
             QMessageBox::warning(this, "Save Image", "Failed to save PNG file.");
         }
     });
+
+    auto scene = m_thumbGrid->scene();
+    scene->setSceneRect(scene->sceneRect());  // ensure size
+    scene->installEventFilter(this);
+}
+
+void MainWindow::connectItem(ThumbItem *item)
+{
+    if (!item) return;
+    connect(item, &ThumbItem::saveRequested, this, [this](const QString &entryName) {
+        if (!m_zipHandler) return;
+
+        QImage fullImg = m_zipHandler->loadImage(entryName);
+        if (fullImg.isNull()) {
+          QMessageBox::warning(this, "Save Image", "Failed to load original image from ZIP.");
+          return;
+        }
+
+        QString defaultName = QFileInfo(entryName).fileName();
+        QString filePath = QFileDialog::getSaveFileName(this, "Save Original Image As", defaultName, "PNG Images (*.png)");
+        if (filePath.isEmpty()) return;
+
+        if (!fullImg.save(filePath, "PNG")) {
+          QMessageBox::warning(this, "Save Image", "Failed to save PNG file.");
+        }
+    });
+
+    connect(item, &ThumbItem::clicked, this, &MainWindow::showImageFromZip);
 }
 
 MainWindow::~MainWindow()
@@ -226,11 +235,11 @@ void MainWindow::listFilesFromZip(const QString &zipPath)
     {
         QImage img = m_zipHandler->loadImage(entry.filename);
         if (!img.isNull())
-        {
-            m_thumbGrid->addThumbnail(entry.filename, img, entry.fileSize);
+        {                        
+           auto thumb = m_thumbGrid->addThumbnail(entry.filename, QPixmap::fromImage(img), entry.fileSize);
+            connectItem(thumb);
         }
     }
-
 }
 
 void MainWindow::onListItemActivated(QListWidgetItem *item)
@@ -303,7 +312,8 @@ void MainWindow::previewZip(const QString &zipPath)
         QImage img = m_zipHandler->loadImage(entry.filename);
         if (!img.isNull())
         {
-            m_thumbGrid->addThumbnail(entry.filename, img, entry.fileSize);
+            auto thumb = m_thumbGrid->addThumbnail(entry.filename, QPixmap::fromImage(img), entry.fileSize);
+            connectItem(thumb);
         }
         ++i;
     }
@@ -366,3 +376,30 @@ void MainWindow::keyPressEvent(QKeyEvent *event)
         QMainWindow::keyPressEvent(event);
     }
 }
+
+bool MainWindow::eventFilter(QObject *obj, QEvent *event)
+{
+    auto scene = m_thumbGrid->scene();
+    if (obj == scene  && event->type() == QEvent::GraphicsSceneContextMenu) {
+
+        auto *ctx = static_cast<QGraphicsSceneContextMenuEvent *>(event);
+
+        // Check if item was clicked
+        QGraphicsItem *item = scene->itemAt(ctx->scenePos(), QTransform());
+        if (item && item->isUnderMouse()) {
+            // let item handle it
+            return false;
+        }
+
+        // Empty area -> show view background menu
+        QMenu menu;
+        menu.addAction("Refresh");
+        menu.addAction("Change background…");
+        menu.exec(ctx->screenPos());
+
+        return true; // consumed
+    }
+
+    return QObject::eventFilter(obj, event);
+}
+

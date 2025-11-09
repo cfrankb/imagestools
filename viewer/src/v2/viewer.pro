@@ -12,17 +12,21 @@ SOURCES += \
     imageviewer.cpp  \
     main.cpp  \
     mainwindow.cpp \
-    thumbnailgrid.cpp \
+    #thumbnailgrid.cpp \
     #ziphandler.cpp \
-    archwrap.cpp
+    archwrap.cpp \
+    thumbitem.cpp \
+    thumbnailview.cpp
 
 HEADERS += \
     imageviewer.h \
     mainwindow.h \
-    thumbnailgrid.h \
+    #thumbnailgrid.h \
     #ziphandler.h \
     archwrap.h \
-    imginfo.h
+    imginfo.h \
+    thumbnailview.h \
+    thumbitem.h
 
 TARGET = ImageViewer
 #LIBS += -lz -lminizip -larchive

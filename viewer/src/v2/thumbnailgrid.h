@@ -17,9 +17,6 @@ public:
     void clear();
     void setBackgroundColor(const QColor &color);
 
-signals:
-    void thumbnailClicked(const QString &entryName);
-    void requestSaveOriginal(const QString &entryName);
 
 
 private:
@@ -28,6 +25,11 @@ private:
     QMap<QString, QLabel *> m_labelMap;
     int m_columns = 3;
     void onLabelClicked();
+
+signals:
+    void thumbnailClicked(const QString &entryName);
+    void requestSaveOriginal(const QString &entryName);
+
 
 private slots:
     void saveThumbnailAsPng(const QString &entryName);

@@ -13,6 +13,7 @@
 #include "archwrap.h"
 #include "imageviewer.h"
 #include "thumbnailgrid.h"
+#include "thumbnailview.h"
 
 class MainWindow : public QMainWindow
 {
@@ -33,7 +34,8 @@ private:
     void clearState();
     void previewZip(const QString &zipPath);
     void onImageSelected(int row);
-
+    void connectItem(ThumbItem *item);
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
     void keyPressEvent(QKeyEvent *event) override;
 
@@ -42,7 +44,8 @@ private:
     QListWidget *m_listWidget;
     QStackedWidget *m_rightStack;
     ImageViewer *m_imageViewer;
-    ThumbnailGrid *m_thumbGrid;
+    //ThumbnailGrid *m_thumbGrid;
+    ThumbnailView *m_thumbGrid;
     QHBoxLayout *m_layout;
 
     //ZipHandler *m_zipHandler = nullptr;
