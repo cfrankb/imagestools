@@ -105,7 +105,6 @@ bool ArchWrap::openZip(QString filepath, QProgressBar *progressBar, int limit)
     qint64 lastReported = 0;
 
     qDebug("new ArchWrap: %s", m_zipPath.toStdString().c_str());
-
     m_entries.clear();
     m_index.clear();
 
@@ -116,7 +115,6 @@ bool ArchWrap::openZip(QString filepath, QProgressBar *progressBar, int limit)
     }
 
     int i = 0;
-
     while (archive_read_next_header(m_arch, &entry) == ARCHIVE_OK)
     {
         const char *name = archive_entry_pathname(entry);

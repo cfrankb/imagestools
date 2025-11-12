@@ -217,6 +217,10 @@ void MainWindow::listFilesFromFolder(const QString &folderPath)
 /// when you open a zipfile (in zipfile mode)
 void MainWindow::listFilesFromZip(const QString &zipPath)
 {
+
+    m_listWidget->setEnabled(false);
+    m_layout->setEnabled(false);
+
     if (!m_zipHandler->openZip(zipPath, m_progressBar, -1)) {
         qDebug("cannot open zip: %s", zipPath.toStdString().c_str());
         return;
@@ -236,10 +240,15 @@ void MainWindow::listFilesFromZip(const QString &zipPath)
         QImage img = m_zipHandler->loadImage(entry.filename);
         if (!img.isNull())
         {                        
-           auto thumb = m_thumbGrid->addThumbnail(entry.filename, QPixmap::fromImage(img), entry.fileSize);
+           auto thumb = m_thumbGrid->addThumbnail(entry.filename, QPixmap::fromImage(img), entry.fileSize, false);
             connectItem(thumb);
         }
     }
+
+    m_thumbGrid->repositionItems();
+
+    m_listWidget->setEnabled(true);
+    m_layout->setEnabled(true);
 }
 
 void MainWindow::onListItemActivated(QListWidgetItem *item)
@@ -312,11 +321,13 @@ void MainWindow::previewZip(const QString &zipPath)
         QImage img = m_zipHandler->loadImage(entry.filename);
         if (!img.isNull())
         {
-            auto thumb = m_thumbGrid->addThumbnail(entry.filename, QPixmap::fromImage(img), entry.fileSize);
+            auto thumb = m_thumbGrid->addThumbnail(entry.filename, QPixmap::fromImage(img), entry.fileSize, false);
             connectItem(thumb);
         }
         ++i;
     }
+
+    m_thumbGrid->repositionItems();
 
     m_layout->setEnabled(true);
     m_listWidget->setEnabled(true);

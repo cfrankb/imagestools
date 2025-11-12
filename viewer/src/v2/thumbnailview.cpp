@@ -2,7 +2,7 @@
 #include <QResizeEvent>
 
 
-ThumbItem * ThumbnailView::addThumbnail(const QString &entryName, const QPixmap &pix, qint64 size)
+ThumbItem * ThumbnailView::addThumbnail(const QString &entryName, const QPixmap &pix, qint64 size, bool reposition)
 {
     auto formatSize = [](qint64 bytes){
         if (bytes < 1024)
@@ -33,7 +33,9 @@ ThumbItem * ThumbnailView::addThumbnail(const QString &entryName, const QPixmap 
     m_items.append(item);
     scene()->addItem(item);
 
-    repositionItems();
+    if (reposition)
+        repositionItems();
+
     return item;
 }
 

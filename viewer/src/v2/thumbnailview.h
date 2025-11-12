@@ -16,11 +16,12 @@ public:
 
     void clear();
     void setBackgroundColor(const QColor &color);
-    ThumbItem * addThumbnail(const QString &entryName, const QPixmap &pix, qint64 size);
+    ThumbItem * addThumbnail(const QString &entryName, const QPixmap &pix, qint64 size, bool reposition);
+    void repositionItems();
 
 protected:
     void resizeEvent(QResizeEvent *event);
-    void repositionItems();
+
 
 private:
     QGraphicsScene *m_scene;

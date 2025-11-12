@@ -28,11 +28,9 @@ ThumbItem::ThumbItem(const QPixmap &pix,
     setFlag(ItemIsSelectable, true);
     setFlag(ItemIsFocusable, true);
 
-
     setAcceptedMouseButtons(Qt::AllButtons);
     setAcceptHoverEvents(true);
     setFlag(QGraphicsItem::ItemIsSelectable, true);
-
 }
 
 void ThumbItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
@@ -68,6 +66,14 @@ void ThumbItem::paint(QPainter *p, const QStyleOptionGraphicsItem *option, QWidg
     QRectF textRect(0, 200, 200, 40);
     p->setFont(QFont("Sans", 9));
     p->setPen(Qt::blue);
+
+
+    // selected state overlay
+    if (isSelected()) {
+        p->setPen(QPen(Qt::yellow, 3));
+        p->setBrush(Qt::NoBrush);
+        p->drawRect(boundingRect().adjusted(1,1,-1,-1));
+    }
 
     QString elided = p->fontMetrics().elidedText(m_entry, Qt::ElideMiddle, int(textRect.width()));
 
