@@ -33,12 +33,11 @@
 #include <QMenu>
 #include <QCheckBox>
 #include <stack>
-#include <optional>
+//#include <optional>
 
 static const int GRID = 8;
-
+const QStringList sizes = {"16", "24", "32", "48", "64", "128", "256"};
 enum HitboxType { MainBox, AttackBox, Special1Box, Special2Box };
-
 struct HitboxDef { QRect rect; HitboxType type; };
 
 static QColor typeColor(HitboxType t) {
@@ -65,7 +64,7 @@ class GridScene : public QGraphicsScene {
 public:
     GridScene(QObject* parent=nullptr) : QGraphicsScene(parent) {}
 
-    void setMajorGrid(int size) { majorGrid = size; update(); }
+    void setMajorGrid(int sizeH, int sizeV) { majorGridH = sizeH; majorGridV = sizeV; update(); }
     void setBackgroundColor(const QColor &color) { backgroundColor = color; update(); }
 
 protected:
@@ -99,18 +98,19 @@ protected:
             painter->drawLine(left, y, right, y);
 
         // Draw major grid (every 64 px)
-        startX = static_cast<int>(left) - (static_cast<int>(left) % majorGrid);
-        startY = static_cast<int>(top) - (static_cast<int>(top) % majorGrid);
+        startX = static_cast<int>(left) - (static_cast<int>(left) % majorGridH);
+        startY = static_cast<int>(top) - (static_cast<int>(top) % majorGridV);
 
         painter->setPen(majorPen);
-        for (int x = startX; x < right; x += majorGrid)
+        for (int x = startX; x < right; x += majorGridH)
             painter->drawLine(x, top, x, bottom);
-        for (int y = startY; y < bottom; y += majorGrid)
+        for (int y = startY; y < bottom; y += majorGridV)
             painter->drawLine(left, y, right, y);
     }
 
 private:
-    int majorGrid = 64;
+    int majorGridH = 64;
+    int majorGridV = 64;
     QColor backgroundColor = QColor(255, 255, 255);
 };
 
@@ -247,11 +247,17 @@ public:
 
 
         // Major grid size selector
-        QComboBox *gridSizeCombo = new QComboBox();
-        gridSizeCombo->addItems({"16", "32", "64", "128", "256"});
-        gridSizeCombo->setCurrentText("64");
+        gridSizeComboH = new QComboBox();
+        gridSizeComboH->addItems(sizes);
+        gridSizeComboH->setCurrentText("64");
         tools->addWidget(new QLabel("Grid:"));
-        tools->addWidget(gridSizeCombo);
+        tools->addWidget(gridSizeComboH);
+
+        gridSizeComboV = new QComboBox();
+        gridSizeComboV->addItems(sizes);
+        gridSizeComboV->setCurrentText("64");
+        tools->addWidget(gridSizeComboV);
+
 
         // Background color selector
         QComboBox *bgColorCombo = new QComboBox();
@@ -259,10 +265,20 @@ public:
         tools->addWidget(new QLabel("Background:"));
         tools->addWidget(bgColorCombo);
 
-        connect(gridSizeCombo, &QComboBox::currentTextChanged, this, [this](const QString &text) {
+        connect(gridSizeComboH, &QComboBox::currentTextChanged, this, [this](const QString &) {
             if (!scene) return;
-            scene->setMajorGrid(text.toInt());
+            auto h = gridSizeComboH->currentText();
+            auto v = gridSizeComboV->currentText();
+            scene->setMajorGrid(h.toInt(), v.toInt());
         });
+
+        connect(gridSizeComboV, &QComboBox::currentTextChanged, this, [this](const QString &) {
+            if (!scene) return;
+            auto h = gridSizeComboH->currentText();
+            auto v = gridSizeComboV->currentText();
+            scene->setMajorGrid(h.toInt(), v.toInt());
+        });
+
 
         connect(bgColorCombo, &QComboBox::currentTextChanged, this, [this](const QString &text) {
             if (!scene) return;
@@ -400,30 +416,12 @@ private slots:
                 QJsonDocument doc = QJsonDocument::fromJson(data);
                 if (doc.isObject()) {
                     QJsonObject root = doc.object();
-                    if (root.contains("hitboxes") && root["hitboxes"].isArray()) {
-                        hitboxes.clear();
-
-                        QJsonArray arr = root["hitboxes"].toArray();
-                        for (const QJsonValue &v : arr) {
-                            QJsonObject o = v.toObject();
-                            HitboxDef hb;
-                            hb.rect = QRect(o["x"].toInt(), o["y"].toInt(), o["w"].toInt(), o["h"].toInt());
-                            hb.type = static_cast<HitboxType>(o["type"].toInt());
-                            hitboxes.append(hb);
-                        }
-
-                        rebuildSceneHitboxes();
-                        updateHitboxList();
-//                        updateSceneHitboxes();
-                        updateHitboxList();
-                        statusBar()->showMessage("Loaded hitboxes from " + jsonPath, 3000);
-                    }
+                    reloadData(root, jsonPath);
                 }
             } else {
                 QMessageBox::warning(this, "Warning", "Cannot open " + jsonPath + " for reading.");
             }
         }
-
     }
 
     void onSave(){        
@@ -431,7 +429,6 @@ private slots:
         if (!imagePath.isEmpty()) {
             QFileInfo info(imagePath);
             jsonPath = info.path() + "/" + info.baseName() + ".json";
- //           baseName = QFileInfo(imagePath).baseName();
         }
 
         QString f=QFileDialog::getSaveFileName(this,"Save",jsonPath,"JSON (*.json)");
@@ -443,44 +440,41 @@ private slots:
             QJsonObject o; o["x"]=hb.rect.x(); o["y"]=hb.rect.y(); o["w"]=hb.rect.width(); o["h"]=hb.rect.height(); o["type"]=(int)hb.type; arr.append(o);
         }
         QJsonObject root{{"imagePath",imagePath},{"hitboxes",arr}};
-        int frameWidth = 64;
-        int frameHeight = 64;
+        int frameWidth = gridSizeComboH->currentText().toInt();
+        int frameHeight = gridSizeComboV->currentText().toInt();
         root["frame"] = QJsonObject{
             {"width", frameWidth},
             {"height", frameHeight },
             {"cols", currentPixmap.width() / frameWidth}
         };
 
-     //   calculateSpriteHitboxes(root, frameWidth, frameHeight);
         QFile file(f); if(file.open(QIODevice::WriteOnly)) file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
         lastOpenedFolder = QFileInfo(f).dir().path();
     }
 
     void onLoad(){
-     //   qDebug("onLoad()");
         QString f=QFileDialog::getOpenFileName(this,"Load", lastOpenedFolder,"JSON (*.json)");
-        if(f.isEmpty())return;
-        QFile file(f); if(!file.open(QIODevice::ReadOnly))return;
-        QJsonDocument doc=QJsonDocument::fromJson(file.readAll()); QJsonObject root=doc.object();
-        QString path=root["imagePath"].toString(); currentPixmap=QPixmap(path);
-     //   qDebug("path: %s", path.toStdString().c_str());
+        if(f.isEmpty())
+            return;
+        QFile file(f);
+        if(!file.open(QIODevice::ReadOnly))return;
+        QJsonDocument doc=QJsonDocument::fromJson(file.readAll());
+        QJsonObject root=doc.object();
+        QString path=root["imagePath"].toString();
+        currentPixmap=QPixmap(path);
         imagePath = path;
         if(currentPixmap.isNull())return;
         scene->clear();
         hitboxes.clear();
         currentPixmapItem=scene->addPixmap(currentPixmap);
-        for(const auto &v:root["hitboxes"].toArray()){
-            QJsonObject o=v.toObject();
-            HitboxDef hb; hb.rect=QRect(o["x"].toInt(),o["y"].toInt(),o["w"].toInt(),o["h"].toInt()); hb.type=(HitboxType)o["type"].toInt();
-            hitboxes.append(hb);
-        }
-        rebuildSceneHitboxes();
+
+        reloadData(root, f);
+
         view->fitInView(currentPixmapItem,Qt::KeepAspectRatio);
-        updateHitboxList();
-        pushUndoState(); pushRedoClear();
+        pushUndoState();
+        pushRedoClear();
         lastOpenedFolder = QFileInfo(f).dir().path();
     }
-
 
     void onImport()
     {
@@ -532,19 +526,9 @@ private slots:
         currentPixmapItem=scene->addPixmap(currentPixmap);
         view->fitInView(currentPixmapItem,Qt::KeepAspectRatio);
 
-        QJsonArray hbArray = root["hitboxes"].toArray();
-        for (const QJsonValue &v : hbArray) {
-            QJsonObject o = v.toObject();
-            HitboxDef hb;
-            hb.rect = QRect(o["x"].toInt(), o["y"].toInt(), o["w"].toInt(), o["h"].toInt());
-            hb.type = static_cast<HitboxType>(o["type"].toInt());
-            hitboxes.append(hb);
-        }
-        rebuildSceneHitboxes();
-        updateHitboxList();
+        reloadData(root, jsonPath);
         pushUndoState();
         pushRedoClear();
-        updateHitboxList();
         statusBar()->showMessage("Imported hitboxes from " + info.fileName(), 3000);
     }
 
@@ -570,6 +554,43 @@ private slots:
 
 private:
 
+    void reloadData(QJsonObject& root, QString &jsonPath)
+    {
+        if (root.contains("hitboxes") && root["hitboxes"].isArray()) {
+            hitboxes.clear();
+            QJsonArray arr = root["hitboxes"].toArray();
+            for (const QJsonValue &v : arr) {
+                QJsonObject o = v.toObject();
+                HitboxDef hb;
+                hb.rect = QRect(o["x"].toInt(), o["y"].toInt(), o["w"].toInt(), o["h"].toInt());
+                hb.type = static_cast<HitboxType>(o["type"].toInt());
+                hitboxes.append(hb);
+            }
+          //  qDebug("****hitboxes: %llu", hitboxes.size());
+            rebuildSceneHitboxes();
+            updateHitboxList();
+            statusBar()->showMessage("Loaded hitboxes from " + jsonPath, 3000);
+        }
+        if (root.contains("frame")) {
+            const QJsonObject frame = root["frame"].toObject();
+            const int w = frame["width"].toInt();
+            const int h = frame["height"].toInt();
+            qDebug(">>>>> w: %d h: %d", w,h);
+            scene->setMajorGrid(w,h);
+            int i = 0;
+            for (auto const &size: sizes) {
+                if (size.toInt() == w) {
+                    gridSizeComboH->setCurrentIndex(i);
+                }
+                if (size.toInt() == h) {
+                    gridSizeComboV->setCurrentIndex(i);
+                }
+                ++i;
+            }
+        }
+    }
+
+
     void calculateSpriteHitboxes(QJsonObject & rootObj, int frameWidth, int frameHeight)
     {
         // Calculate frame grid
@@ -580,7 +601,6 @@ private:
             QRect frameRect;             // position of the frame in the spritesheet
             QVector<HitboxDef> hitboxes; // hitboxes local to this frame
         };
-
 
         QVector<SpriteFrame> frames;
         for (int y = 0; y < rows; ++y)
@@ -779,7 +799,6 @@ private:
 
     QGraphicsView *view;
     GridScene *scene;
-    //QGraphicsScene *scene;
     QGraphicsPixmapItem *currentPixmapItem=nullptr;
     QPixmap currentPixmap;
     QList<HitboxDef> hitboxes;
@@ -791,6 +810,8 @@ private:
     QPoint currPos;
     QString imagePath;
     QString lastOpenedFolder;
+    QComboBox *gridSizeComboH;
+    QComboBox *gridSizeComboV;
 };
 
 

@@ -1,6 +1,7 @@
 import os
 from PIL import Image
 import pathlib
+import copy
 
 
 def example():
@@ -93,7 +94,7 @@ monsters: list[dict] = [
     {
         "name": "Plant1",
         "layers": ["body", "brown", "head", "red", "swing"],
-        "skip": True,
+        "skip": False,
     },
     {
         "name": "Beholder1",
@@ -101,9 +102,14 @@ monsters: list[dict] = [
         "skip": True,
     },
     {
+        "name": "Beholder3",
+        "layers": ["body", "fire", "red", "swing"],
+        "skip": True,
+    },
+    {
         "name": "Slime3",
         "layers": ["body"],
-        "skip": False,
+        "skip": True,
     },
 ]
 
@@ -111,6 +117,7 @@ monsters: list[dict] = [
 for monster in monsters:
     if monster["skip"]:
         continue
+    print(monster)
     monster_name = monster["name"]
     layers = monster["layers"]
     strip_height = 64
@@ -153,11 +160,14 @@ for monster in monsters:
         print("")
 
         # shadow version
+        layers1 = copy.deepcopy(layers)
+        if "red" in layers:
+            layers1.remove("red")
         basename = f"{monster_name}_{seq}s".lower()
         files, frames = process_strip(
             monster_name,
             png_source_path,
-            ["shadow"] + layers,
+            ["shadow"] + layers1,
             basename,
             dest_path_png,
             strip_height,
