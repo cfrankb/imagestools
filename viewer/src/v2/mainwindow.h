@@ -53,6 +53,7 @@ private:
     QString m_currentFolder;
     QString m_currentZip;
     QStringList m_imageFiles;
+    QString m_saveFolder;
 
     enum Mode {
         FolderMode,

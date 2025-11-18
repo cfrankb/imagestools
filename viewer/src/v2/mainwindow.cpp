@@ -114,8 +114,10 @@ MainWindow::MainWindow(QWidget *parent)
         }
 
         QString defaultName = QFileInfo(entryName).fileName();
-        QString filePath = QFileDialog::getSaveFileName(this, "Save Original Image As", defaultName, "PNG Images (*.png)");
+        QString fullPath = QDir(m_saveFolder).filePath(defaultName);
+        QString filePath = QFileDialog::getSaveFileName(this, "Save Original Image As", fullPath, "PNG Images (*.png)");
         if (filePath.isEmpty()) return;
+        m_saveFolder = QFileInfo(filePath).absolutePath();
 
         if (!fullImg.save(filePath, "PNG")) {
             QMessageBox::warning(this, "Save Image", "Failed to save PNG file.");
@@ -200,6 +202,8 @@ void MainWindow::openZip()
 
 void MainWindow::listFilesFromFolder(const QString &folderPath)
 {
+    QList<QListWidgetItem*> list;
+
     QDir d(folderPath);
     QFileInfoList entries = d.entryInfoList(QDir::Files | QDir::NoDotAndDotDot, QDir::Name);
     for (const QFileInfo &fi : entries)
@@ -209,14 +213,25 @@ void MainWindow::listFilesFromFolder(const QString &folderPath)
         {
             QListWidgetItem *it = new QListWidgetItem(fi.fileName());
             it->setData(Qt::UserRole, fi.absoluteFilePath());
-            m_listWidget->addItem(it);
+    //        m_listWidget->addItem(it);
+            list.append(it);
         }
     }
+
+    std::sort(list.begin(), list.end(), [](const QListWidgetItem *a, const QListWidgetItem *b) {
+        return  a->text().toLower() < b->text().toLower();   // case-insensitive compare
+    });
+
+    for (const auto it : list)
+        m_listWidget->addItem(it);
+
 }
 
 /// when you open a zipfile (in zipfile mode)
 void MainWindow::listFilesFromZip(const QString &zipPath)
 {
+
+    QList<QListWidgetItem*> list;
 
     m_listWidget->setEnabled(false);
     m_layout->setEnabled(false);
@@ -231,8 +246,17 @@ void MainWindow::listFilesFromZip(const QString &zipPath)
     {
         QListWidgetItem *it = new QListWidgetItem(entry.filename);
         it->setData(Qt::UserRole, entry.filename); // store entry name
-        m_listWidget->addItem(it);
+       // m_listWidget->addItem(it);
     }
+
+    std::sort(list.begin(), list.end(), [](const QListWidgetItem *a, const QListWidgetItem *b) {
+        return  a->text().toLower() < b->text().toLower();   // case-insensitive compare
+    });
+
+    for (const auto it : list)
+        m_listWidget->addItem(it);
+
+
     // populate thumbnail grid
     m_thumbGrid->clear();
     for (const ImgInfo &entry : images)
