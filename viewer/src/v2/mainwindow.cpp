@@ -142,7 +142,8 @@ void MainWindow::connectItem(ThumbItem *item)
         }
 
         QString defaultName = QFileInfo(entryName).fileName();
-        QString filePath = QFileDialog::getSaveFileName(this, "Save Original Image As", defaultName, "PNG Images (*.png)");
+        QString fullPath = QDir(m_saveFolder).filePath(defaultName);
+        QString filePath = QFileDialog::getSaveFileName(this, "Save Original Image As", fullPath, "PNG Images (*.png)");
         if (filePath.isEmpty()) return;
 
         if (!fullImg.save(filePath, "PNG")) {
