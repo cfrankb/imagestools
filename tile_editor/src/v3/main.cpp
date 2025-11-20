@@ -28,6 +28,7 @@
 #include <QDockWidget>
 #include <QFormLayout>
 #include <QPushButton>
+#include <QMenuBar>
 
 
 // Qt Tile Editor (single-file demo)
@@ -155,7 +156,7 @@ private:
     int m_next;
     int m_speed;
     QString m_tag;
-    int m_weight = 1;    // ← NEW (default weight 1)
+    int m_weight = 1;
 };
 
 class TileScene : public QGraphicsScene
@@ -273,7 +274,6 @@ public:
         createToolbar();
         statusBar()->showMessage("Ready");
 
-
         QDockWidget *propDock = new QDockWidget("Tile Properties", this);
         propDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
 
@@ -297,10 +297,8 @@ public:
         nextSpin->setMinimum(-1);
         nextSpin->setMaximum(255);
         QSpinBox *speedSpin = new QSpinBox;
-
         QSpinBox *weightSpin = new QSpinBox;
         weightSpin->setRange(0, 9999);  // or any range you prefer
-        //weightSpin->setValue(1);
 
         QPushButton *applyButton = new QPushButton("Apply", this);
         // Connect the button's clicked signal to our custom slot
@@ -330,6 +328,24 @@ public:
                 this, &MainWindow::updatePropertiesPanel);
 
         updatePropertiesPanel();
+
+        // Add to the File menu
+        auto fileMenu = menuBar()->addMenu("File");
+        QAction *openAct = fileMenu->addAction("Open Image");
+        connect(openAct, &QAction::triggered, this, &MainWindow::loadImage);
+        QAction *saveJsonAct = fileMenu->addAction("Save Tileset JSON");
+        connect(saveJsonAct, &QAction::triggered, this, &MainWindow::saveJson);
+        QAction *loadJsonAct = fileMenu->addAction("Load Tileset JSON");
+        connect(loadJsonAct, &QAction::triggered, this, &MainWindow::loadJson);
+        fileMenu->addSeparator();
+        QAction *exitAct = new QAction("Exit", this);
+        exitAct->setShortcut(QKeySequence::Quit);   // Ctrl+Q
+        connect(exitAct, &QAction::triggered, this, &QMainWindow::close);
+        fileMenu->addAction(exitAct);
+
+        // Add to the View menu
+        auto viewMenu = menuBar()->addMenu("View");
+        viewMenu->addAction(propDock->toggleViewAction());
     }
 
 private slots:
@@ -526,7 +542,6 @@ private slots:
             t["speed"] = ti->speed();
             t["tag"] = ti->tag();
             t["w"] = ti->weight();   // ← NEW
-
             byIndex[idx] = t;
         }
         // write array in index order
@@ -634,9 +649,7 @@ private slots:
             if (sp)
                 sp->setValue(m_tileSize);
         }
-
         statusBar()->showMessage(QString("Loaded tileset from %1").arg(fn));
-
         updatePropertiesPanel();
     }
 
@@ -644,15 +657,6 @@ private:
     void createToolbar()
     {
         QToolBar *tb = addToolBar("Main");
-        QAction *openAct = tb->addAction("Open Image");
-        connect(openAct, &QAction::triggered, this, &MainWindow::loadImage);
-
-        QAction *saveJsonAct = tb->addAction("Save Tileset JSON");
-        connect(saveJsonAct, &QAction::triggered, this, &MainWindow::saveJson);
-        QAction *loadJsonAct = tb->addAction("Load Tileset JSON");
-        connect(loadJsonAct, &QAction::triggered, this, &MainWindow::loadJson);
-
-        tb->addSeparator();
         QLabel *lbl = new QLabel("Tile size:");
         tb->addWidget(lbl);
         QSpinBox *spin = new QSpinBox;
@@ -766,7 +770,6 @@ private:
         m_weightSpin->setValue(it->weight());
     }
 
-
     TileScene *m_scene;
     QGraphicsView *m_view;
     QImage m_image;
@@ -784,7 +787,6 @@ private:
 
     QString m_imageFolder;
     QString m_jsonFolder;
-
 };
 
 #include "main.moc"
