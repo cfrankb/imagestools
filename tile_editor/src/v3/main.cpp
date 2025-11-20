@@ -80,6 +80,9 @@ public:
     void setTag(const QString &tag) { m_tag = tag;}
     QString tag() { return m_tag;}
 
+    void setWeight(const int w) {m_weight = w;}
+    int weight() {return m_weight;}
+
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = nullptr) override
     {
         Q_UNUSED(option)
@@ -133,8 +136,16 @@ public:
 
         if (!m_tag.isEmpty()) {
             painter->setPen(Qt::white);
-            painter->setFont(QFont("Arial", 4));
+            painter->setFont(QFont("Arial", 3));
             painter->drawText(r.adjusted(2,2,-2,-2), m_tag);
+        }
+
+        if (m_weight != 1) {
+            painter->setPen(Qt::yellow);
+            painter->setFont(QFont("Arial", 2));
+            painter->drawText(r.adjusted(0,0,-2,-2),
+                              Qt::AlignRight | Qt::AlignBottom,
+                              QString::number(m_weight));
         }
     }
 
@@ -144,6 +155,7 @@ private:
     int m_next;
     int m_speed;
     QString m_tag;
+    int m_weight = 1;    // ← NEW (default weight 1)
 };
 
 class TileScene : public QGraphicsScene
@@ -280,10 +292,15 @@ public:
 
         QLabel *label = new QLabel("TILE: --", this);
         QLineEdit *tagEdit = new QLineEdit;
+
         QSpinBox *nextSpin = new QSpinBox;
         nextSpin->setMinimum(-1);
         nextSpin->setMaximum(255);
         QSpinBox *speedSpin = new QSpinBox;
+
+        QSpinBox *weightSpin = new QSpinBox;
+        weightSpin->setRange(0, 9999);  // or any range you prefer
+        //weightSpin->setValue(1);
 
         QPushButton *applyButton = new QPushButton("Apply", this);
         // Connect the button's clicked signal to our custom slot
@@ -294,18 +311,20 @@ public:
         form->addRow("Tag:", tagEdit);
         form->addRow("Next Tile:", nextSpin);
         form->addRow("Speed:", speedSpin);
+        form->addRow("Weight:", weightSpin);
         form->addRow(applyButton);
 
         propDock->setWidget(propWidget);
         addDockWidget(Qt::RightDockWidgetArea, propDock);
 
         // store pointers as members
-        this->m_typeBox = typeBox;
-        this->m_tagEdit = tagEdit;
-        this->m_nextSpin = nextSpin;
-        this->m_speedSpin = speedSpin;
-        this->m_applyButton = applyButton;
-        this->m_label = label;
+        m_label = label;
+        m_typeBox = typeBox;
+        m_tagEdit = tagEdit;
+        m_nextSpin = nextSpin;
+        m_speedSpin = speedSpin;
+        m_weightSpin = weightSpin;
+        m_applyButton = applyButton;
 
         connect(m_scene, &TileScene::selectionChanged,
                 this, &MainWindow::updatePropertiesPanel);
@@ -328,6 +347,7 @@ private slots:
             ti->setTag(m_tagEdit->text());
             ti->setNext(m_nextSpin->value());
             ti->setSpeed(m_speedSpin->value());
+            ti->setWeight(m_weightSpin->value());
         }
 
         // Repaint highlighted tiles
@@ -377,6 +397,7 @@ private slots:
         QAction *setNext = menu.addAction("Set Next Tile Index...");
         QAction *setSpeed = menu.addAction("Set Animation Speed...");
         QAction *setTagAct = menu.addAction("Set Tag");
+        QAction *setWeightAct = menu.addAction("Set Weight");
 
         QAction *chosen = menu.exec(screenPos);
         if (!chosen)
@@ -441,8 +462,19 @@ private slots:
                 }
                 //viewport()->update();   // redraw
             }
+        } else if (chosen == setWeightAct)
+        {
+            bool ok;
+            int val = QInputDialog::getInt(this, "Set Weight", "Weight:", 0, 0, 1000, 2, &ok);
+            if (!ok)
+                return;
+            for (QGraphicsItem *it : sel)
+            {
+                TileItem *ti = dynamic_cast<TileItem *>(it);
+                if (ti)
+                    ti->setWeight(val);
+            }
         }
-
     }
 
     void setZoomPreset(int percent)
@@ -493,6 +525,8 @@ private slots:
             t["next"] = ti->next();
             t["speed"] = ti->speed();
             t["tag"] = ti->tag();
+            t["w"] = ti->weight();   // ← NEW
+
             byIndex[idx] = t;
         }
         // write array in index order
@@ -572,6 +606,7 @@ private slots:
             int next = o.value("next").toInt(-1);
             double speed = o.value("speed").toDouble(1.0);
             QString tag = o.value("tag").toString();
+            int weight = o.contains("w") ? o["w"].toInt() : 1;
             // find item by index
             QList<QGraphicsItem *> allItems = m_scene->items(Qt::AscendingOrder);
             for (QGraphicsItem *it : allItems)
@@ -585,6 +620,7 @@ private slots:
                     ti->setNext(next);
                     ti->setSpeed(speed);
                     ti->setTag(tag);
+                    ti->setWeight(weight);
                     break;
                 }
             }
@@ -699,6 +735,7 @@ private:
             m_nextSpin->setEnabled(false);
             m_speedSpin->setEnabled(false);
             m_applyButton->setEnabled(false);
+            m_weightSpin->setEnabled(false);
             m_label->setText("TILE: --");
             return;
         }
@@ -708,6 +745,7 @@ private:
         m_nextSpin->setEnabled(true);
         m_speedSpin->setEnabled(true);
         m_applyButton->setEnabled(true);
+        m_weightSpin->setEnabled(true);
 
         // Show first selected tile's values
         const auto & it = dynamic_cast<TileItem *>(selectedTiles.first());
@@ -725,6 +763,7 @@ private:
         m_tagEdit->setText(it->tag());
         m_nextSpin->setValue(it->next());
         m_speedSpin->setValue(it->speed());
+        m_weightSpin->setValue(it->weight());
     }
 
 
@@ -740,6 +779,7 @@ private:
     QLineEdit *m_tagEdit;
     QSpinBox *m_nextSpin;
     QSpinBox *m_speedSpin;
+    QSpinBox *m_weightSpin;
     QPushButton *m_applyButton;
 
     QString m_imageFolder;

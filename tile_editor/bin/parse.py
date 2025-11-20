@@ -16,6 +16,7 @@ for tile in data["tiles"]:
         "0" if tile["next"] < 0 else str(tile["next"]),
         str(tile["speed"]),
         str(tile["type"]),
+        str(tile["w"]),
     ]
     if tile["tag"]:
         row.append(tile["tag"])
