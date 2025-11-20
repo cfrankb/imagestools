@@ -36,6 +36,15 @@
 
 // Build with Qt6/Qt5 (qmake/CMake/Qt Creator)
 
+enum TileType {
+    Background,
+    Foreground,
+    Solid,
+    Deadly,
+    Water,
+};
+
+
 class TileItem : public QGraphicsRectItem
 {
 public:
@@ -51,18 +60,21 @@ public:
         setAcceptHoverEvents(true);
     }
 
-    void setType(int t)
+    void setTileType(int t)
     {
         m_type = t;
         update();
     }
-    int type() const { return m_type; }
+    int tileType() const { return m_type; }
 
     void setNext(int n) { m_next = n; }
     int next() const { return m_next; }
 
     void setSpeed(double s) { m_speed = s; }
-    double speed() const { return m_speed; }
+    int speed() const { return m_speed; }
+
+    void setTag(QString &tag) { m_tag = tag;}
+    QString tag() { return m_tag;}
 
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = nullptr) override
     {
@@ -78,17 +90,20 @@ public:
         bool useOverlay = true;
         switch (m_type)
         {
-        case 0:
+        case TileType::Background:
             useOverlay = false;
             break;
-        case 1:
+        case TileType::Foreground:
             overlay = QColor(0, 0, 255, 90);
             break;
-        case 2:
+        case TileType::Solid:
             overlay = QColor(255, 165, 0, 90);
             break;
-        case 3:
+        case TileType::Deadly:
             overlay = QColor(255, 0, 0, 110);
+            break;
+        case TileType::Water:
+            overlay = QColor(101, 101, 101, 110);
             break;
         default:
             useOverlay = false;
@@ -111,13 +126,20 @@ public:
             painter->setPen(p);
             painter->drawRect(r);
         }
+
+        if (!m_tag.isEmpty()) {
+            painter->setPen(Qt::white);
+            painter->setFont(QFont("Arial", 4));
+            painter->drawText(r.adjusted(2,2,-2,-2), m_tag);
+        }
     }
 
 private:
     QPixmap m_pix;
     int m_type;
     int m_next;
-    double m_speed;
+    int m_speed;
+    QString m_tag;
 };
 
 class TileScene : public QGraphicsScene
@@ -265,28 +287,33 @@ private slots:
         QAction *a1 = typeMenu->addAction("1 - Foreground (blue)");
         QAction *a2 = typeMenu->addAction("2 - Solid (orange)");
         QAction *a3 = typeMenu->addAction("3 - Deadly (red)");
+        QAction *a4 = typeMenu->addAction("4 - Water (gray)");
 
         QAction *setNext = menu.addAction("Set Next Tile Index...");
         QAction *setSpeed = menu.addAction("Set Animation Speed...");
+        QAction *setTagAct = menu.addAction("Set Tag");
+
 
         QAction *chosen = menu.exec(screenPos);
         if (!chosen)
             return;
 
-        if (chosen == a0 || chosen == a1 || chosen == a2 || chosen == a3)
+        if (chosen == a0 || chosen == a1 || chosen == a2 || chosen == a3 || chosen == a4)
         {
-            int t = 0;
+            int t = TileType::Background;
             if (chosen == a1)
-                t = 1;
-            if (chosen == a2)
-                t = 2;
-            if (chosen == a3)
-                t = 3;
+                t = TileType::Foreground;
+            else if (chosen == a2)
+                t = TileType::Solid;
+            else if (chosen == a3)
+                t = TileType::Deadly;
+            else if (chosen == a4)
+                t = TileType::Water;
             for (QGraphicsItem *it : sel)
             {
                 TileItem *ti = dynamic_cast<TileItem *>(it);
                 if (ti)
-                    ti->setType(t);
+                    ti->setTileType(t);
             }
             m_scene->update();
         }
@@ -306,7 +333,7 @@ private slots:
         else if (chosen == setSpeed)
         {
             bool ok;
-            double val = QInputDialog::getDouble(this, "Set Speed", "Animation speed:", 1.0, 0.0, 1000.0, 2, &ok);
+            int val = QInputDialog::getInt(this, "Set Speed", "Animation speed:", 0, 0, 1000, 2, &ok);
             if (!ok)
                 return;
             for (QGraphicsItem *it : sel)
@@ -315,7 +342,23 @@ private slots:
                 if (ti)
                     ti->setSpeed(val);
             }
+        } else if (chosen == setTagAct) {
+            bool ok = false;
+            QString tag = QInputDialog::getText(
+                this, "Set Tag",
+                "Enter tag:", QLineEdit::Normal,
+                "", &ok);
+
+            if (ok) {
+                for (QGraphicsItem *it : sel) {
+                    TileItem *ti = dynamic_cast<TileItem *>(it);
+                    if (ti)
+                        ti->setTag(tag);
+                }
+                //viewport()->update();   // redraw
+            }
         }
+
     }
 
     void setZoomPreset(int percent)
@@ -362,9 +405,10 @@ private slots:
             int idx = ti->data(TileItem::TypeRole).toInt();
             QJsonObject t;
             t["index"] = idx;
-            t["type"] = ti->type();
+            t["type"] = ti->tileType();
             t["next"] = ti->next();
             t["speed"] = ti->speed();
+            t["tag"] = ti->tag();
             byIndex[idx] = t;
         }
         // write array in index order
@@ -438,6 +482,7 @@ private slots:
             int type = o.value("type").toInt(0);
             int next = o.value("next").toInt(-1);
             double speed = o.value("speed").toDouble(1.0);
+            QString tag = o.value("tag").toString();
             // find item by index
             QList<QGraphicsItem *> allItems = m_scene->items(Qt::AscendingOrder);
             for (QGraphicsItem *it : allItems)
@@ -447,9 +492,10 @@ private slots:
                     continue;
                 if (ti->data(TileItem::TypeRole).toInt() == idx)
                 {
-                    ti->setType(type);
+                    ti->setTileType(type);
                     ti->setNext(next);
                     ti->setSpeed(speed);
+                    ti->setTag(tag);
                     break;
                 }
             }
