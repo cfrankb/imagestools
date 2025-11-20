@@ -1,0 +1,12 @@
+int total = 0;
+for (auto &t : tiles)
+    total += t.weight;
+
+int r = QRandomGenerator::global()->bounded(total);
+
+int cumulative = 0;
+for (auto &t : tiles) {
+    cumulative += t.weight;
+    if (r < cumulative)
+        return t;   // selected
+}

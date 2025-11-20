@@ -25,6 +25,10 @@
 #include <QFile>
 #include <QGraphicsSceneMouseEvent>
 #include <QSpinBox>
+#include <QDockWidget>
+#include <QFormLayout>
+#include <QPushButton>
+
 
 // Qt Tile Editor (single-file demo)
 // - Open image and split into tiles (default 16x16)
@@ -73,7 +77,7 @@ public:
     void setSpeed(double s) { m_speed = s; }
     int speed() const { return m_speed; }
 
-    void setTag(QString &tag) { m_tag = tag;}
+    void setTag(const QString &tag) { m_tag = tag;}
     QString tag() { return m_tag;}
 
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = nullptr) override
@@ -160,6 +164,7 @@ protected:
                 m_rubber->setZValue(10000);
             }
             event->accept();
+            emit selectionChanged();    // ← update panel
             return;
         }
         if (event->button() == Qt::RightButton)
@@ -168,6 +173,7 @@ protected:
             if (!it)
                 clearSelection();
             event->accept();
+            emit selectionChanged();    // ← update panel
             return;
         }
         QGraphicsScene::mousePressEvent(event);
@@ -181,6 +187,7 @@ protected:
             r = r.normalized();
             m_rubber->setRect(r);
             event->accept();
+            emit selectionChanged();    // ← update panel
             return;
         }
         QGraphicsScene::mouseMoveEvent(event);
@@ -201,6 +208,7 @@ protected:
             for (QGraphicsItem *it : itemsInRect)
                 it->setSelected(true);
             event->accept();
+            emit selectionChanged();    // ← update panel
             return;
         }
         if (event->button() == Qt::RightButton)
@@ -214,6 +222,7 @@ protected:
             }
             emit requestContextMenu(event->screenPos());
             event->accept();
+            emit selectionChanged();    // ← update panel
             return;
         }
         QGraphicsScene::mouseReleaseEvent(event);
@@ -221,6 +230,7 @@ protected:
 
 signals:
     void requestContextMenu(const QPoint &screenPos);
+    void selectionChanged();
 
 private:
     QPointF m_origin;
@@ -250,12 +260,84 @@ public:
 
         createToolbar();
         statusBar()->showMessage("Ready");
+
+
+        QDockWidget *propDock = new QDockWidget("Tile Properties", this);
+        propDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+
+        QWidget *propWidget = new QWidget;
+        QFormLayout *form = new QFormLayout(propWidget);
+
+        // Create fields
+        QComboBox *typeBox = new QComboBox;
+        typeBox->addItems({
+               "0 Background",
+               "1 Foreground",
+               "2 Solid",
+               "3 Deadly",
+               "4 Water"
+        });
+
+        QLabel *label = new QLabel("TILE: --", this);
+        QLineEdit *tagEdit = new QLineEdit;
+        QSpinBox *nextSpin = new QSpinBox;
+        nextSpin->setMinimum(-1);
+        nextSpin->setMaximum(255);
+        QSpinBox *speedSpin = new QSpinBox;
+
+        QPushButton *applyButton = new QPushButton("Apply", this);
+        // Connect the button's clicked signal to our custom slot
+        connect(applyButton, &QPushButton::clicked, this, &MainWindow::applyProperties);
+
+        form->addRow(label);
+        form->addRow("Type:", typeBox);
+        form->addRow("Tag:", tagEdit);
+        form->addRow("Next Tile:", nextSpin);
+        form->addRow("Speed:", speedSpin);
+        form->addRow(applyButton);
+
+        propDock->setWidget(propWidget);
+        addDockWidget(Qt::RightDockWidgetArea, propDock);
+
+        // store pointers as members
+        this->m_typeBox = typeBox;
+        this->m_tagEdit = tagEdit;
+        this->m_nextSpin = nextSpin;
+        this->m_speedSpin = speedSpin;
+        this->m_applyButton = applyButton;
+        this->m_label = label;
+
+        connect(m_scene, &TileScene::selectionChanged,
+                this, &MainWindow::updatePropertiesPanel);
+
+        updatePropertiesPanel();
     }
 
 private slots:
+
+    void applyProperties()
+    {
+        QList<QGraphicsItem *> selectedTiles = m_scene->selectedItems();
+        if (selectedTiles.isEmpty()) return;
+
+        for (QGraphicsItem *it : selectedTiles)
+        {
+            TileItem *ti = dynamic_cast<TileItem *>(it);
+            if (!ti) continue;
+            ti->setTileType(m_typeBox->currentIndex());
+            ti->setTag(m_tagEdit->text());
+            ti->setNext(m_nextSpin->value());
+            ti->setSpeed(m_speedSpin->value());
+        }
+
+        // Repaint highlighted tiles
+        m_scene->update();
+    }
+
+
     void loadImage()
     {
-        QString fn = QFileDialog::getOpenFileName(this, "Open Image", QString(), "Images (*.png *.jpg *.bmp *.gif)");
+        QString fn = QFileDialog::getOpenFileName(this, "Open Image", m_imageFolder, "Images (*.png *.jpg *.bmp *.gif)");
         if (fn.isEmpty())
             return;
         if (!m_image.load(fn))
@@ -263,7 +345,10 @@ private slots:
             statusBar()->showMessage("Failed to load image");
             return;
         }
+        // save imagefile
         m_imageFile = fn;
+        // save imagefolder
+        m_imageFolder = QFileInfo(fn).absoluteFilePath();
         createTiles();
         statusBar()->showMessage(QString("Loaded %1 — %2x%3").arg(fn).arg(m_image.width()).arg(m_image.height()));
     }
@@ -292,7 +377,6 @@ private slots:
         QAction *setNext = menu.addAction("Set Next Tile Index...");
         QAction *setSpeed = menu.addAction("Set Animation Speed...");
         QAction *setTagAct = menu.addAction("Set Tag");
-
 
         QAction *chosen = menu.exec(screenPos);
         if (!chosen)
@@ -379,7 +463,7 @@ private slots:
             statusBar()->showMessage("No image loaded to save.");
             return;
         }
-        QString fn = QFileDialog::getSaveFileName(this, "Save Tileset JSON", QString(), "JSON Files (*.json)");
+        QString fn = QFileDialog::getSaveFileName(this, "Save Tileset JSON", m_jsonFolder, "JSON Files (*.json)");
         if (fn.isEmpty())
             return;
         if (!fn.endsWith(".json"))
@@ -426,14 +510,17 @@ private slots:
             statusBar()->showMessage("Failed to open file for writing.");
             return;
         }
-        f.write(doc.toJson(QJsonDocument::Indented));
+        f.write(doc.toJson(QJsonDocument::Compact));
         f.close();
         statusBar()->showMessage(QString("Saved tileset to %1").arg(fn));
+
+        // save json folder
+        m_jsonFolder = QFileInfo(fn).absoluteFilePath();
     }
 
     void loadJson()
     {
-        QString fn = QFileDialog::getOpenFileName(this, "Load Tileset JSON", QString(), "JSON Files (*.json)");
+        QString fn = QFileDialog::getOpenFileName(this, "Load Tileset JSON", m_jsonFolder, "JSON Files (*.json)");
         if (fn.isEmpty())
             return;
         QFile f(fn);
@@ -466,6 +553,8 @@ private slots:
         }
         m_imageFile = imagePath;
         m_tileSize = tileSize;
+        // save json folder
+        m_jsonFolder = QFileInfo(fn).absoluteFilePath();
 
         // create tiles then apply properties
         createTiles();
@@ -511,6 +600,8 @@ private slots:
         }
 
         statusBar()->showMessage(QString("Loaded tileset from %1").arg(fn));
+
+        updatePropertiesPanel();
     }
 
 private:
@@ -599,12 +690,61 @@ private:
         m_view->setViewportUpdateMode(QGraphicsView::SmartViewportUpdate);
     }
 
+    void updatePropertiesPanel()
+    {
+        QList<QGraphicsItem *> selectedTiles = m_scene->selectedItems();
+        if (selectedTiles.isEmpty()) {
+            m_typeBox->setEnabled(false);
+            m_tagEdit->setEnabled(false);
+            m_nextSpin->setEnabled(false);
+            m_speedSpin->setEnabled(false);
+            m_applyButton->setEnabled(false);
+            m_label->setText("TILE: --");
+            return;
+        }
+
+        m_typeBox->setEnabled(true);
+        m_tagEdit->setEnabled(true);
+        m_nextSpin->setEnabled(true);
+        m_speedSpin->setEnabled(true);
+        m_applyButton->setEnabled(true);
+
+        // Show first selected tile's values
+        const auto & it = dynamic_cast<TileItem *>(selectedTiles.first());
+
+        int idx = it->data(TileItem::TypeRole).toInt();
+        if (selectedTiles.size() == 1) {
+            m_label->setText(QString("TILE: %1").arg(idx));
+        }
+        else {
+            size_t count = selectedTiles.size() - 1;
+            m_label->setText(QString("TILE: %1 [+ %2 other%3 selected]").arg(idx).arg(count).arg(count == 1? "": "s"));
+        }
+
+        m_typeBox->setCurrentIndex(it->tileType());
+        m_tagEdit->setText(it->tag());
+        m_nextSpin->setValue(it->next());
+        m_speedSpin->setValue(it->speed());
+    }
+
+
     TileScene *m_scene;
     QGraphicsView *m_view;
     QImage m_image;
     QString m_imageFile;
     int m_tileSize = 16;
     int m_currentZoom = 100; // default 100%
+
+    QLabel *m_label;
+    QComboBox *m_typeBox;
+    QLineEdit *m_tagEdit;
+    QSpinBox *m_nextSpin;
+    QSpinBox *m_speedSpin;
+    QPushButton *m_applyButton;
+
+    QString m_imageFolder;
+    QString m_jsonFolder;
+
 };
 
 #include "main.moc"

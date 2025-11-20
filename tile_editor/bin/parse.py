@@ -1,6 +1,6 @@
 import json
 
-with open("data/777.json") as sfile:
+with open("data/888.json") as sfile:
     data = json.load(sfile)
 
 
@@ -12,12 +12,14 @@ for tile in data["tiles"]:
         print(tile)
 
     row = [
-        str(tile["index"]),
+        # str(tile["index"]),
         "0" if tile["next"] < 0 else str(tile["next"]),
         str(tile["speed"]),
         str(tile["type"]),
-        tile["tag"],
     ]
+    if tile["tag"]:
+        row.append(tile["tag"])
+
     rows.append("\t".join(row))
 
 with open("data/layerdata.tsv", "w") as t:
