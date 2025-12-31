@@ -29,6 +29,8 @@
 #include <QFormLayout>
 #include <QPushButton>
 #include <QMenuBar>
+#include <QPushButton>
+#include <QSettings>
 
 
 // Qt Tile Editor (single-file demo)
@@ -337,7 +339,14 @@ public:
         connect(saveJsonAct, &QAction::triggered, this, &MainWindow::saveJson);
         QAction *loadJsonAct = fileMenu->addAction("Load Tileset JSON");
         connect(loadJsonAct, &QAction::triggered, this, &MainWindow::loadJson);
+
+        // Separator
         fileMenu->addSeparator();
+        // Recent files submenu
+        m_recentMenu = fileMenu->addMenu(tr("Recent Files"));
+
+        fileMenu->addSeparator();
+
         QAction *exitAct = new QAction("Exit", this);
         exitAct->setShortcut(QKeySequence::Quit);   // Ctrl+Q
         connect(exitAct, &QAction::triggered, this, &QMainWindow::close);
@@ -346,7 +355,10 @@ public:
         // Add to the View menu
         auto viewMenu = menuBar()->addMenu("View");
         viewMenu->addAction(propDock->toggleViewAction());
+
+        readSettings(); // restore recent files, window geometry, etc.
     }
+
 
 private slots:
 
@@ -559,12 +571,15 @@ private slots:
             statusBar()->showMessage("Failed to open file for writing.");
             return;
         }
-        f.write(doc.toJson(QJsonDocument::Compact));
+        f.write(doc.toJson(QJsonDocument::Indented));
         f.close();
         statusBar()->showMessage(QString("Saved tileset to %1").arg(fn));
 
         // save json folder
         m_jsonFolder = QFileInfo(fn).absoluteFilePath();
+
+        // add filepath
+        addRecentFile(fn);
     }
 
     void loadJson()
@@ -572,11 +587,15 @@ private slots:
         QString fn = QFileDialog::getOpenFileName(this, "Load Tileset JSON", m_jsonFolder, "JSON Files (*.json)");
         if (fn.isEmpty())
             return;
+        readJson(fn);
+    }
+
+    bool readJson(const QString &fn) {
         QFile f(fn);
         if (!f.open(QIODevice::ReadOnly))
         {
             statusBar()->showMessage("Failed to open JSON file");
-            return;
+            return false;
         }
         QByteArray data = f.readAll();
         f.close();
@@ -585,7 +604,7 @@ private slots:
         if (err.error != QJsonParseError::NoError)
         {
             statusBar()->showMessage("JSON parse error");
-            return;
+            return false;
         }
         QJsonObject root = doc.object();
         QString imagePath = root.value("imagePath").toString();
@@ -593,12 +612,12 @@ private slots:
         if (imagePath.isEmpty())
         {
             statusBar()->showMessage("JSON missing imagePath");
-            return;
+            return false;
         }
         if (!m_image.load(imagePath))
         {
             statusBar()->showMessage("Failed to load image from JSON: " + imagePath);
-            return;
+            return false;
         }
         m_imageFile = imagePath;
         m_tileSize = tileSize;
@@ -651,6 +670,10 @@ private slots:
         }
         statusBar()->showMessage(QString("Loaded tileset from %1").arg(fn));
         updatePropertiesPanel();
+
+        // add filepath
+        addRecentFile(fn);
+        return true;
     }
 
 private:
@@ -769,6 +792,52 @@ private:
         m_speedSpin->setValue(it->speed());
         m_weightSpin->setValue(it->weight());
     }
+
+    void updateRecentFilesMenu() {
+        m_recentMenu->clear();
+
+        for (const QString &path : m_recentFiles) {
+            QFileInfo fileInfo(path);
+            QString filename(fileInfo.fileName());
+            QAction *act = m_recentMenu->addAction(filename);
+            connect(act, &QAction::triggered, this, [this, path]() {
+                readJson(path);
+            });
+            act->setStatusTip(path);
+        }
+
+        if (m_recentFiles.isEmpty()) {
+            m_recentMenu->addAction(tr("(No recent files)"))->setEnabled(false);
+        }
+    }
+
+    void addRecentFile(const QString &path) {
+        m_recentFiles.removeAll(path);        // avoid duplicates
+        m_recentFiles.prepend(path);          // newest first
+        while (m_recentFiles.size() > 10)     // limit to 10
+            m_recentFiles.removeLast();
+
+        updateRecentFilesMenu();
+    }
+
+    void readSettings() {
+        QSettings s;
+        m_recentFiles = s.value("recentFiles").toStringList();
+        updateRecentFilesMenu();
+    }
+
+    void writeSettings() {
+        QSettings s;
+        s.setValue("recentFiles", m_recentFiles);
+    }
+
+    void closeEvent(QCloseEvent *event) {
+        writeSettings();
+        QMainWindow::closeEvent(event);
+    }
+
+    QStringList m_recentFiles;
+    QMenu *m_recentMenu;
 
     TileScene *m_scene;
     QGraphicsView *m_view;
