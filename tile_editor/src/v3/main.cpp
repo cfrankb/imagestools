@@ -27,6 +27,8 @@
 #include <QSpinBox>
 #include <QDockWidget>
 #include <QFormLayout>
+#include <QCheckBox>
+#include <QGridLayout>
 #include <QPushButton>
 #include <QMenuBar>
 #include <QPushButton>
@@ -38,6 +40,8 @@
 // - Left-click-drag to select multiple tiles (Ctrl to add)
 // - Right-click opens context menu for selection: set Type (0..3), set Next tile, set animation speed
 // - Selected tiles highlighted; non-background tiles get colored overlay
+// - Per-tile granular quadrant flags (2x2): semi-transparent purple overlay,
+//   checkbox UI in the properties panel, persisted in the tileset JSON
 // - Zoom presets: 100%, 200%, 400%
 // - Save/Load tileset metadata (JSON): image path, tile size, per-tile type/next/speed
 
@@ -48,9 +52,13 @@ enum TileType {
     Foreground,
     Solid,
     Deadly,
-    Water,
+    Water
 };
 
+const uint8_t GranualarUL=1; // TOP LEFT
+const uint8_t GranualarUR=2; // TOP RIGHT
+const uint8_t GranualarDL=4; // BOTTOM LEFT
+const uint8_t GranualarDR=8; // BOTTOM RIGHT
 
 class TileItem : public QGraphicsRectItem
 {
@@ -61,7 +69,7 @@ public:
     };
 
     TileItem(const QRectF &rect, const QPixmap &pix)
-        : QGraphicsRectItem(rect), m_pix(pix), m_type(0), m_next(-1), m_speed(1.0)
+        : QGraphicsRectItem(rect), m_pix(pix), m_granular(0), m_type(0), m_next(-1), m_speed(1.0)
     {
         setFlags(ItemIsSelectable | ItemIsFocusable);
         setAcceptHoverEvents(true);
@@ -85,6 +93,9 @@ public:
 
     void setWeight(const int w) {m_weight = w;}
     int weight() {return m_weight;}
+
+    uint8_t granular() {return m_granular;}
+    void setGranular(const uint8_t gr) {m_granular= gr;}
 
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = nullptr) override
     {
@@ -122,6 +133,26 @@ public:
         if (useOverlay)
             painter->fillRect(r, overlay);
 
+        // Granular quadrant overlay (semi-transparent purple) over active areas
+        if (m_granular != 0)
+        {
+            painter->save();
+            const QBrush purpleOverlay(QColor(128, 0, 128, 100)); // ~40% opacity
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(purpleOverlay);
+            const qreal halfW = r.width() / 2.0;
+            const qreal halfH = r.height() / 2.0;
+            if (m_granular & GranualarUL)
+                painter->fillRect(QRectF(r.x(), r.y(), halfW, halfH), purpleOverlay);
+            if (m_granular & GranualarUR)
+                painter->fillRect(QRectF(r.x() + halfW, r.y(), halfW, halfH), purpleOverlay);
+            if (m_granular & GranualarDL)
+                painter->fillRect(QRectF(r.x(), r.y() + halfH, halfW, halfH), purpleOverlay);
+            if (m_granular & GranualarDR)
+                painter->fillRect(QRectF(r.x() + halfW, r.y() + halfH, halfW, halfH), purpleOverlay);
+            painter->restore();
+        }
+
         if (isSelected())
         {
             QPen p(Qt::yellow);
@@ -154,6 +185,7 @@ public:
 
 private:
     QPixmap m_pix;
+    uint8_t m_granular;
     int m_type;
     int m_next;
     int m_speed;
@@ -306,12 +338,32 @@ public:
         // Connect the button's clicked signal to our custom slot
         connect(applyButton, &QPushButton::clicked, this, &MainWindow::applyProperties);
 
+        // Granular 2x2 quadrant selector, laid out in physical tile orientation
+        QWidget *granWidget = new QWidget;
+        QGridLayout *granGrid = new QGridLayout(granWidget);
+        granGrid->setContentsMargins(0, 0, 0, 0);
+        granGrid->setHorizontalSpacing(2);
+        granGrid->setVerticalSpacing(2);
+        QCheckBox *chkUL = new QCheckBox("UL");
+        QCheckBox *chkUR = new QCheckBox("UR");
+        QCheckBox *chkDL = new QCheckBox("DL");
+        QCheckBox *chkDR = new QCheckBox("DR");
+        granGrid->addWidget(chkUL, 0, 0);
+        granGrid->addWidget(chkUR, 0, 1);
+        granGrid->addWidget(chkDL, 1, 0);
+        granGrid->addWidget(chkDR, 1, 1);
+        connect(chkUL, &QCheckBox::toggled, this, [this](bool on) { onGranularToggle(GranualarUL, on); });
+        connect(chkUR, &QCheckBox::toggled, this, [this](bool on) { onGranularToggle(GranualarUR, on); });
+        connect(chkDL, &QCheckBox::toggled, this, [this](bool on) { onGranularToggle(GranualarDL, on); });
+        connect(chkDR, &QCheckBox::toggled, this, [this](bool on) { onGranularToggle(GranualarDR, on); });
+
         form->addRow(label);
         form->addRow("Type:", typeBox);
         form->addRow("Tag:", tagEdit);
         form->addRow("Next Tile:", nextSpin);
         form->addRow("Speed:", speedSpin);
         form->addRow("Weight:", weightSpin);
+        form->addRow("Granular:", granWidget);
         form->addRow(applyButton);
 
         propDock->setWidget(propWidget);
@@ -325,6 +377,10 @@ public:
         m_speedSpin = speedSpin;
         m_weightSpin = weightSpin;
         m_applyButton = applyButton;
+        m_granUL = chkUL;
+        m_granUR = chkUR;
+        m_granDL = chkDL;
+        m_granDR = chkDR;
 
         connect(m_scene, &TileScene::selectionChanged,
                 this, &MainWindow::updatePropertiesPanel);
@@ -361,6 +417,25 @@ public:
 
 
 private slots:
+
+    void onGranularToggle(const uint8_t flag, bool on)
+    {
+        QList<QGraphicsItem *> selectedTiles = m_scene->selectedItems();
+        if (selectedTiles.isEmpty())
+            return;
+
+        for (QGraphicsItem *it : selectedTiles)
+        {
+            TileItem *ti = dynamic_cast<TileItem *>(it);
+            if (!ti) continue;
+            uint8_t v = ti->granular();
+            v = on ? (uint8_t)(v | flag) : (uint8_t)(v & ~flag);
+            ti->setGranular(v);
+        }
+
+        // Repaint highlighted tiles
+        m_scene->update();
+    }
 
     void applyProperties()
     {
@@ -554,6 +629,7 @@ private slots:
             t["speed"] = ti->speed();
             t["tag"] = ti->tag();
             t["w"] = ti->weight();   // ← NEW
+            t["granular"] = ti->granular();
             byIndex[idx] = t;
         }
         // write array in index order
@@ -641,6 +717,7 @@ private slots:
             double speed = o.value("speed").toDouble(1.0);
             QString tag = o.value("tag").toString();
             int weight = o.contains("w") ? o["w"].toInt() : 1;
+            int granular = o.contains("granular") ? o["granular"].toInt(0) : 0;
             // find item by index
             QList<QGraphicsItem *> allItems = m_scene->items(Qt::AscendingOrder);
             for (QGraphicsItem *it : allItems)
@@ -655,6 +732,7 @@ private slots:
                     ti->setSpeed(speed);
                     ti->setTag(tag);
                     ti->setWeight(weight);
+                    ti->setGranular(static_cast<uint8_t>(granular));
                     break;
                 }
             }
@@ -763,6 +841,10 @@ private:
             m_speedSpin->setEnabled(false);
             m_applyButton->setEnabled(false);
             m_weightSpin->setEnabled(false);
+            m_granUL->setEnabled(false);
+            m_granUR->setEnabled(false);
+            m_granDL->setEnabled(false);
+            m_granDR->setEnabled(false);
             m_label->setText("TILE: --");
             return;
         }
@@ -773,6 +855,10 @@ private:
         m_speedSpin->setEnabled(true);
         m_applyButton->setEnabled(true);
         m_weightSpin->setEnabled(true);
+        m_granUL->setEnabled(true);
+        m_granUR->setEnabled(true);
+        m_granDL->setEnabled(true);
+        m_granDR->setEnabled(true);
 
         // Show first selected tile's values
         const auto & it = dynamic_cast<TileItem *>(selectedTiles.first());
@@ -791,6 +877,15 @@ private:
         m_nextSpin->setValue(it->next());
         m_speedSpin->setValue(it->speed());
         m_weightSpin->setValue(it->weight());
+
+        // Populate the 2x2 granular quadrant checkboxes (block signals to avoid feedback loop)
+        {
+            QSignalBlocker b1(m_granUL), b2(m_granUR), b3(m_granDL), b4(m_granDR);
+            m_granUL->setChecked(it->granular() & GranualarUL);
+            m_granUR->setChecked(it->granular() & GranualarUR);
+            m_granDL->setChecked(it->granular() & GranualarDL);
+            m_granDR->setChecked(it->granular() & GranualarDR);
+        }
     }
 
     void updateRecentFilesMenu() {
@@ -853,6 +948,11 @@ private:
     QSpinBox *m_speedSpin;
     QSpinBox *m_weightSpin;
     QPushButton *m_applyButton;
+
+    QCheckBox *m_granUL;
+    QCheckBox *m_granUR;
+    QCheckBox *m_granDL;
+    QCheckBox *m_granDR;
 
     QString m_imageFolder;
     QString m_jsonFolder;
