@@ -2,3 +2,4 @@
 **/backup/*
 **.pro.user
 .vscode/
+.aider*

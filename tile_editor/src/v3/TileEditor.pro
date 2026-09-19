@@ -8,4 +8,11 @@ TEMPLATE = app
 TARGET = TileEditor
 
 SOURCES += \
-    main.cpp
+    main.cpp \
+    tileitem.cpp \
+    tilescene.cpp \
+    mainwindow.cpp
+
+HEADERS += mainwindow.h \
+    tileitem.h \
+    tilescene.h
