@@ -1,4 +1,6 @@
 #include <QApplication>
+#include <QSharedMemory>
+#include <QMessageBox>
 #include "mainwindow.h"
 
 // Qt Tile Editor (single-file demo)
@@ -17,6 +19,16 @@
 int main(int argc, char **argv)
 {
     QApplication app(argc, argv);
+
+    // Prevent a second instance from opening
+    QSharedMemory shared("tileeditor-singleton");
+    if (!shared.create(1)) {
+        qWarning() << "Another instance is already running.";
+        QMessageBox::warning(nullptr, "Tile Editor",
+                             "Another instance of Tile Editor is already running.");
+        return 1;
+    }
+
     MainWindow w;
     w.resize(900, 700);
     w.show();

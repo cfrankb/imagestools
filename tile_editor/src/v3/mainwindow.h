@@ -22,6 +22,8 @@
 #include <QSettings>
 #include <QFileInfo>
 #include <QCloseEvent>
+#include <QMessageBox>
+#include <QSharedMemory>
 
 #include "tileitem.h"
 #include "tilescene.h"
@@ -55,6 +57,9 @@ private slots:
 
 private:
     void createDockWidget();
+    void setModified(bool modified);
+    void refreshTitle();
+    bool confirmDiscard();
 
     TileScene *m_scene;
     QGraphicsView *m_view;
@@ -81,8 +86,12 @@ private:
 
     QString m_imageFolder;
     QString m_jsonFolder;
+    QString m_jsonFile;
     QStringList m_recentFiles;
     QMenu *m_recentMenu;
+
+    bool m_modified = false;
+    QSharedMemory *m_sharedMemory = nullptr;
 };
 
 #endif // MAINWINDOW_H
