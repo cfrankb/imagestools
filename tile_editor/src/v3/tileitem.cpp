@@ -27,6 +27,12 @@ QString TileItem::tag() const { return m_tag; }
 void TileItem::setWeight(const int w) { m_weight = w; }
 int TileItem::weight() const { return m_weight; }
 
+void TileItem::setManual(bool m) { m_manual = m; }
+bool TileItem::manual() const { return m_manual; }
+
+void TileItem::setBack(int b) { m_back = b; }
+int TileItem::back() const { return m_back; }
+
 uint8_t TileItem::granular() const { return m_granular; }
 void TileItem::setGranular(const uint8_t gr) { m_granular = gr; }
 

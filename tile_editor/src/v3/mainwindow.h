@@ -83,6 +83,8 @@ private:
     QCheckBox *m_granUR;
     QCheckBox *m_granDL;
     QCheckBox *m_granDR;
+    QCheckBox *m_manualCheckbox;
+    QSpinBox *m_backSpin;
 
     QString m_imageFolder;
     QString m_jsonFolder;

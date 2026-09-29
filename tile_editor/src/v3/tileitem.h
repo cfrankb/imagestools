@@ -44,6 +44,12 @@ public:
     void setWeight(const int w);
     int weight() const;
 
+    void setManual(bool m);
+    bool manual() const;
+
+    void setBack(int b);
+    int back() const;
+
     uint8_t granular() const;
     void setGranular(const uint8_t gr);
 
@@ -57,6 +63,8 @@ private:
     int m_speed;
     QString m_tag;
     int m_weight = 1;
+    bool m_manual = false;
+    int m_back = -1;
 };
 
 #endif // TILEITEM_H

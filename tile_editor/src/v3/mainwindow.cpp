@@ -41,6 +41,7 @@ MainWindow::MainWindow()
     QAction *openAct = fileMenu->addAction("Open Image");
     connect(openAct, &QAction::triggered, this, &MainWindow::loadImage);
     QAction *saveJsonAct = fileMenu->addAction("Save Tileset JSON");
+    saveJsonAct->setShortcut(QKeySequence("Ctrl+S"));
     connect(saveJsonAct, &QAction::triggered, this, &MainWindow::saveJson);
     QAction *loadJsonAct = fileMenu->addAction("Load Tileset JSON");
     connect(loadJsonAct, &QAction::triggered, this, &MainWindow::loadJson);
@@ -71,7 +72,7 @@ void MainWindow::refreshTitle()
     QString current = m_jsonFile.isEmpty() ? m_imageFile : m_jsonFile;
     if (!current.isEmpty())
     {
-        setWindowTitle(QFileInfo(current).fileName() + (m_modified ? " *" : ""));
+        setWindowTitle("Qt Tile Editor - " + QFileInfo(current).fileName() + (m_modified ? " *" : ""));
     }
     else if (m_modified)
     {
@@ -150,6 +151,9 @@ void MainWindow::createDockWidget()
     QSpinBox *nextSpin = new QSpinBox;
     nextSpin->setMinimum(-1);
     nextSpin->setMaximum(255);
+    QSpinBox *backSpin = new QSpinBox;
+    backSpin->setMinimum(-1);
+    backSpin->setMaximum(255);
     QSpinBox *speedSpin = new QSpinBox;
     QSpinBox *weightSpin = new QSpinBox;
     weightSpin->setRange(0, 9999);
@@ -187,14 +191,31 @@ void MainWindow::createDockWidget()
     connect(chkDR, &QCheckBox::toggled, this, [this](bool on)
             { onGranularToggle(GranualarDR, on); });
 
+    QCheckBox *manualCheckbox = new QCheckBox("Toggle Manual", this);
+    connect(manualCheckbox, &QCheckBox::toggled, this, [this](bool on)
+            {
+        QList<QGraphicsItem *> selectedTiles = m_scene->selectedItems();
+        if (selectedTiles.isEmpty())
+            return;
+        for (QGraphicsItem *it : selectedTiles)
+        {
+            TileItem *ti = dynamic_cast<TileItem *>(it);
+            if (ti)
+                ti->setManual(on);
+        }
+        m_scene->update();
+        setModified(true); });
+
     form->addRow(label);
     form->addRow("Type:", typeBox);
     form->addRow("Tag:", tagEdit);
     form->addRow("Next Tile:", nextSpin);
+    form->addRow("Back:", backSpin);
     form->addRow("", selectTileButton);
     form->addRow("Speed:", speedSpin);
     form->addRow("Weight:", weightSpin);
     form->addRow("Granular:", granWidget);
+    form->addRow("Manual:", manualCheckbox);
     form->addRow(applyButton);
 
     propDock->setWidget(propWidget);
@@ -212,6 +233,8 @@ void MainWindow::createDockWidget()
     m_granUR = chkUR;
     m_granDL = chkDL;
     m_granDR = chkDR;
+    m_manualCheckbox = manualCheckbox;
+    m_backSpin = backSpin;
 
     connect(m_scene, &TileScene::selectionChanged,
             this, &MainWindow::updatePropertiesPanel);
@@ -250,6 +273,7 @@ void MainWindow::applyProperties()
         ti->setNext(m_nextSpin->value());
         ti->setSpeed(m_speedSpin->value());
         ti->setWeight(m_weightSpin->value());
+        ti->setBack(m_backSpin->value());
     }
 
     // Repaint highlighted tiles
@@ -273,6 +297,9 @@ void MainWindow::loadImage()
     }
     // save imagefile
     m_imageFile = fn;
+    // A directly-opened image replaces any tileset association, so clear the
+    // JSON filename — otherwise refreshTitle() would keep showing the stale one.
+    m_jsonFile.clear();
     // save imagefolder
     m_imageFolder = QFileInfo(fn).absoluteFilePath();
     createTiles();
@@ -296,9 +323,14 @@ void MainWindow::showContextMenu(const QPoint &screenPos)
     QAction *a4 = typeMenu->addAction("4 - Water (gray)");
 
     QAction *setNext = menu.addAction("Set Next Tile Index...");
+    QAction *setBack = menu.addAction("Set Back Tile Index...");
     QAction *setSpeed = menu.addAction("Set Animation Speed...");
     QAction *setTagAct = menu.addAction("Set Tag");
     QAction *setWeightAct = menu.addAction("Set Weight");
+
+    QMenu *manualMenu = menu.addMenu("Set Manual");
+    QAction *m0 = manualMenu->addAction("false");
+    QAction *m1 = manualMenu->addAction("true");
 
     QAction *chosen = menu.exec(screenPos);
     if (!chosen)
@@ -380,6 +412,26 @@ void MainWindow::showContextMenu(const QPoint &screenPos)
             if (ti)
                 ti->setWeight(val);
         }
+    } else if (chosen == m0 || chosen == m1) {
+        bool manual = chosen == m1? true : false;
+        for (QGraphicsItem *it : sel)
+        {
+            TileItem *ti = dynamic_cast<TileItem *>(it);
+            if (ti)
+                ti->setManual(manual);
+        }
+    } else if (chosen == setBack)
+    {
+        bool ok;
+        int val = QInputDialog::getInt(this, "Set Back Tile", "Back tile index (-1 = none):", -1, -1, 1000000, 1, &ok);
+        if (!ok)
+            return;
+        for (QGraphicsItem *it : sel)
+        {
+            TileItem *ti = dynamic_cast<TileItem *>(it);
+            if (ti)
+                ti->setBack(val);
+        }
     }
     setModified(true);
 }
@@ -427,14 +479,26 @@ void MainWindow::saveJson()
             continue;
         int idx = ti->data(TileItem::TypeRole).toInt();
         QJsonObject t;
-        t["index"] = idx;
-        t["type"] = ti->tileType();
-        t["next"] = ti->next();
-        t["speed"] = ti->speed();
-        t["tag"] = ti->tag();
-        t["w"] = ti->weight(); // ← NEW
-        t["granular"] = ti->granular();
-        byIndex[idx] = t;
+        if (ti->tileType())
+            t["type"] = ti->tileType();
+        if (ti->next()>= 0)
+            t["next"] = ti->next();
+        if (ti->speed()>1)
+            t["speed"] = ti->speed();
+        if (!ti->tag().isEmpty())
+            t["tag"] = ti->tag();
+        if (ti->weight() > 1)
+            t["w"] = ti->weight();
+        if (ti->granular())
+            t["granular"] = ti->granular();
+        if (ti->manual())
+            t["manual"] = ti->manual();
+        if (ti->back() >= 0)
+            t["back"] = ti->back();
+        if (!t.empty()) {
+            t["index"] = idx;
+            byIndex[idx] = t;
+        }
     }
     // write array in index order
     QList<int> keys = byIndex.keys();
@@ -528,6 +592,8 @@ bool MainWindow::readJson(const QString &fn)
         QString tag = o.value("tag").toString();
         int weight = o.contains("w") ? o["w"].toInt() : 1;
         int granular = o.contains("granular") ? o["granular"].toInt(0) : 0;
+        bool manual = o.contains("manual") ? o["manual"].toBool(false) : false;
+        int back = o.value("back").toInt(-1);
         // find item by index
         QList<QGraphicsItem *> allItems = m_scene->items(Qt::AscendingOrder);
         for (QGraphicsItem *it : allItems)
@@ -543,6 +609,8 @@ bool MainWindow::readJson(const QString &fn)
                 ti->setTag(tag);
                 ti->setWeight(weight);
                 ti->setGranular(static_cast<uint8_t>(granular));
+                ti->setManual(manual);
+                ti->setBack(back);
                 break;
             }
         }
@@ -624,6 +692,8 @@ void MainWindow::updatePropertiesPanel()
         m_granUR->setEnabled(false);
         m_granDL->setEnabled(false);
         m_granDR->setEnabled(false);
+        m_manualCheckbox->setEnabled(false);
+        m_backSpin->setEnabled(false);
         m_label->setText("TILE: --");
         return;
     }
@@ -638,9 +708,17 @@ void MainWindow::updatePropertiesPanel()
     m_granUR->setEnabled(true);
     m_granDL->setEnabled(true);
     m_granDR->setEnabled(true);
+    m_manualCheckbox->setEnabled(true);
+    m_backSpin->setEnabled(true);
 
     // Show first selected tile's values
     const auto &it = dynamic_cast<TileItem *>(selectedTiles.first());
+
+    // Populate the "Manual" checkbox (block signals to avoid feedback loop)
+    {
+        QSignalBlocker b(m_manualCheckbox);
+        m_manualCheckbox->setChecked(it->manual());
+    }
 
     int idx = it->data(TileItem::TypeRole).toInt();
     if (selectedTiles.size() == 1)
@@ -656,6 +734,7 @@ void MainWindow::updatePropertiesPanel()
     m_typeBox->setCurrentIndex(it->tileType());
     m_tagEdit->setText(it->tag());
     m_nextSpin->setValue(it->next());
+    m_backSpin->setValue(it->back());
     m_speedSpin->setValue(it->speed());
     m_weightSpin->setValue(it->weight());
 
