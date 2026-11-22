@@ -143,7 +143,8 @@ void MainWindow::createDockWidget()
                        "1 Foreground",
                        "2 Solid",
                        "3 Deadly",
-                       "4 Water"});
+                       "4 Water",
+                       "5 Sticky"});
 
     QLabel *label = new QLabel("TILE: --", this);
     QLineEdit *tagEdit = new QLineEdit;
@@ -321,6 +322,7 @@ void MainWindow::showContextMenu(const QPoint &screenPos)
     QAction *a2 = typeMenu->addAction("2 - Solid (orange)");
     QAction *a3 = typeMenu->addAction("3 - Deadly (red)");
     QAction *a4 = typeMenu->addAction("4 - Water (gray)");
+    QAction *a5 = typeMenu->addAction("5 - Sticky (green)");
 
     QAction *setNext = menu.addAction("Set Next Tile Index...");
     QAction *setBack = menu.addAction("Set Back Tile Index...");
@@ -347,6 +349,8 @@ void MainWindow::showContextMenu(const QPoint &screenPos)
             t = TileType::Deadly;
         else if (chosen == a4)
             t = TileType::Water;
+        else if (chosen == a5)
+            t = TileType::Sticky;
         for (QGraphicsItem *it : sel)
         {
             TileItem *ti = dynamic_cast<TileItem *>(it);

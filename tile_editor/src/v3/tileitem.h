@@ -11,7 +11,8 @@ enum TileType {
     Foreground,
     Solid,
     Deadly,
-    Water
+    Water,
+    Sticky
 };
 
 const uint8_t GranualarUL=1; // TOP LEFT

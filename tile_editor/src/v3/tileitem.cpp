@@ -65,6 +65,9 @@ void TileItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
     case TileType::Water:
         overlay = QColor(101, 101, 101, 110);
         break;
+    case TileType::Sticky:
+        overlay = QColor(0, 255, 0, 110);
+        break;
     default:
         useOverlay = false;
         break;
