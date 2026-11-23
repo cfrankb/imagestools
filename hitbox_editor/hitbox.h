@@ -20,7 +20,8 @@ class GridScene : public QGraphicsScene {
 public:
     GridScene(QObject* parent=nullptr) : QGraphicsScene(parent) {}
 
-    void setMajorGrid(int sizeH, int sizeV) { majorGridH = sizeH; majorGridV = sizeV; update(); }
+    // Guards against 0/negative: drawBackground does % and += on these.
+    void setMajorGrid(int sizeH, int sizeV) { if (sizeH > 0 && sizeV > 0) { majorGridH = sizeH; majorGridV = sizeV; } update(); }
     void setBackgroundColor(const QColor &color) { backgroundColor = color; update(); }
 
 protected:

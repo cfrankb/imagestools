@@ -2,18 +2,22 @@
 
 #include <QDebug>
 #include <QFileDialog>
+#include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QKeySequence>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
+#include <QSettings>
 #include <QMouseEvent>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QIntValidator>
 #include <QPushButton>
 #include <QStatusBar>
 #include <QGraphicsPixmapItem>
@@ -22,7 +26,25 @@
 #include <QVBoxLayout>
 #include <QWidget>
 
+static const int kMaxCustomGrid = 4;   // remembered typed sizes per axis
+
+// Grid sizes must be positive multiples of 8 - the minor grid and hitbox snap are both 8px.
+// Ties round up; anything under 8 (including a blank field) becomes 8.
+static int roundGrid(int v) { return qMax(8, (v + 4) / 8 * 8); }
+
+// Drops anything unusable from a remembered list (legacy settings, hand-edited files).
+static QStringList validSizes(const QStringList &in)
+{
+    QStringList out;
+    for (const QString &v : in)
+        if (v.toInt() > 0 && v.toInt() % 8 == 0 && !out.contains(v)) out << v;
+    while (out.size() > kMaxCustomGrid) out.removeLast();
+    return out;
+}
+
 Editor::Editor(QWidget *p):QMainWindow(p){
+    lastOpenedFolder = QSettings().value("lastFolder", QDir::homePath()).toString();
+
     scene=new GridScene(this);
     view=new QGraphicsView(scene,this);
     view->setRenderHints(QPainter::Antialiasing|QPainter::SmoothPixmapTransform);
@@ -90,16 +112,26 @@ Editor::Editor(QWidget *p):QMainWindow(p){
     connect(importButton, &QPushButton::clicked, this, &Editor::onImport);
 
 
-    // Major grid size selector
+    // Major grid size selector: presets from the list, or type any size (e.g. 104 x 96).
+    // The last 4 custom sizes per axis are kept in the dropdown for reuse.
+    customGridW = validSizes(QSettings().value("customGridW").toStringList());
+    customGridH = validSizes(QSettings().value("customGridH").toStringList());
+
     gridSizeComboH = new QComboBox();
-    gridSizeComboH->addItems(sizes);
+    gridSizeComboH->addItems(customGridW + sizes);
     gridSizeComboH->setCurrentText("64");
+    gridSizeComboH->setEditable(true);
+    gridSizeComboH->setInsertPolicy(QComboBox::NoInsert);
+    gridSizeComboH->setValidator(new QIntValidator(1, 4096, gridSizeComboH));
     tools->addWidget(new QLabel("Grid:"));
     tools->addWidget(gridSizeComboH);
 
     gridSizeComboV = new QComboBox();
-    gridSizeComboV->addItems(sizes);
+    gridSizeComboV->addItems(customGridH + sizes);
     gridSizeComboV->setCurrentText("64");
+    gridSizeComboV->setEditable(true);
+    gridSizeComboV->setInsertPolicy(QComboBox::NoInsert);
+    gridSizeComboV->setValidator(new QIntValidator(1, 4096, gridSizeComboV));
     tools->addWidget(gridSizeComboV);
 
 
@@ -109,19 +141,11 @@ Editor::Editor(QWidget *p):QMainWindow(p){
     tools->addWidget(new QLabel("Background:"));
     tools->addWidget(bgColorCombo);
 
-    connect(gridSizeComboH, &QComboBox::currentTextChanged, this, [this](const QString &) {
-        if (!scene) return;
-        auto h = gridSizeComboH->currentText();
-        auto v = gridSizeComboV->currentText();
-        scene->setMajorGrid(h.toInt(), v.toInt());
-    });
-
-    connect(gridSizeComboV, &QComboBox::currentTextChanged, this, [this](const QString &) {
-        if (!scene) return;
-        auto h = gridSizeComboH->currentText();
-        auto v = gridSizeComboV->currentText();
-        scene->setMajorGrid(h.toInt(), v.toInt());
-    });
+    connect(gridSizeComboH, &QComboBox::currentTextChanged, this, &Editor::applyGridSize);
+    connect(gridSizeComboV, &QComboBox::currentTextChanged, this, &Editor::applyGridSize);
+    // Only commit a typed size when editing ends, so half-typed "1"/"10" are neither applied nor remembered.
+    connect(gridSizeComboH->lineEdit(), &QLineEdit::editingFinished, this, &Editor::commitGridSizes);
+    connect(gridSizeComboV->lineEdit(), &QLineEdit::editingFinished, this, &Editor::commitGridSizes);
 
 
     connect(bgColorCombo, &QComboBox::currentTextChanged, this, [this](const QString &text) {
@@ -240,7 +264,7 @@ void Editor::onOpen(){
     pushUndoState();
     pushRedoClear();
     setWindowTitle(QFileInfo(imagePath).baseName());
-    lastOpenedFolder = QFileInfo(imagePath).dir().path();
+    rememberFolder(QFileInfo(imagePath).dir().path());
 
     QFileInfo info(filePath);
     QString jsonPath = info.path() + "/" + info.completeBaseName() + ".json";
@@ -260,6 +284,7 @@ void Editor::onOpen(){
             QMessageBox::warning(this, "Warning", "Cannot open " + jsonPath + " for reading.");
         }
     }
+    checkGridFits();   // no sibling json: the grid is still whatever it was before
 }
 
 void Editor::onSave(){
@@ -278,8 +303,10 @@ void Editor::onSave(){
         QJsonObject o; o["x"]=hb.rect.x(); o["y"]=hb.rect.y(); o["w"]=hb.rect.width(); o["h"]=hb.rect.height(); o["type"]=(int)hb.type; arr.append(o);
     }
     QJsonObject root{{"imagePath",imagePath},{"hitboxes",arr}};
+    commitGridSizes();   // guarantees both sizes below are positive multiples of 8
     int frameWidth = gridSizeComboH->currentText().toInt();
     int frameHeight = gridSizeComboV->currentText().toInt();
+    checkGridFits();
     root["frame"] = QJsonObject{
         {"width", frameWidth},
         {"height", frameHeight },
@@ -287,7 +314,7 @@ void Editor::onSave(){
     };
 
     QFile file(f); if(file.open(QIODevice::WriteOnly)) file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
-    lastOpenedFolder = QFileInfo(f).dir().path();
+    rememberFolder(QFileInfo(f).dir().path());
 }
 
 void Editor::onLoad(){
@@ -299,9 +326,20 @@ void Editor::onLoad(){
     QJsonDocument doc=QJsonDocument::fromJson(file.readAll());
     QJsonObject root=doc.object();
     QString path=root["imagePath"].toString();
-    currentPixmap=QPixmap(path);
+    QPixmap pix(path);
+    if (pix.isNull()) {   // stale/foreign path in the JSON: ask for the real file
+        QDir dir = path.isEmpty() ? QDir(lastOpenedFolder) : QFileInfo(path).absoluteDir();
+        QString picked = QFileDialog::getOpenFileName(this,
+            "Find image for " + QFileInfo(f).fileName(),
+            dir.exists() ? dir.path() : lastOpenedFolder,
+            "Images (*.png *.jpg *.bmp)");
+        if (picked.isEmpty()) return;                 // cancelled: keep the current image
+        pix = QPixmap(picked);
+        if (pix.isNull()) { QMessageBox::warning(this, "Load Failed", "Cannot load image:\n" + picked); return; }
+        path = picked;
+    }
+    currentPixmap = pix;
     imagePath = path;
-    if(currentPixmap.isNull())return;
     scene->clear();
     hitboxes.clear();
     currentPixmapItem=scene->addPixmap(currentPixmap);
@@ -311,7 +349,7 @@ void Editor::onLoad(){
     view->fitInView(currentPixmapItem,Qt::KeepAspectRatio);
     pushUndoState();
     pushRedoClear();
-    lastOpenedFolder = QFileInfo(f).dir().path();
+    rememberFolder(QFileInfo(f).dir().path());
 }
 
 void Editor::onImport()
@@ -324,13 +362,14 @@ void Editor::onImport()
     QString importImagePath = QFileDialog::getOpenFileName(
         this,
         "Select Image to Import Hitboxes From",
-        "",
+        lastOpenedFolder,
         "Images (*.png *.jpg *.bmp)"
         );
 
     if (importImagePath.isEmpty())
         return;
 
+    rememberFolder(QFileInfo(importImagePath).dir().path());
     QFileInfo info(importImagePath);
     QString jsonPath = info.path() + "/" + info.completeBaseName() + ".json";
 
@@ -389,6 +428,63 @@ void Editor::onHitboxSelected(int r){
     updateStatus();
 }
 
+void Editor::applyGridSize()
+{
+    if (!scene) return;
+    scene->setMajorGrid(gridSizeComboH->currentText().toInt(), gridSizeComboV->currentText().toInt());
+    checkGridFits();
+}
+
+void Editor::commitGridSizes()
+{
+    commitGridSize(gridSizeComboH, customGridW, "customGridW");
+    commitGridSize(gridSizeComboV, customGridH, "customGridH");
+    applyGridSize();
+}
+
+void Editor::commitGridSize(QComboBox *box, QStringList &list, const QString &key)
+{
+    const int raw = box->currentText().toInt();
+    const int v = roundGrid(raw);
+    if (v != raw) {
+        box->setCurrentText(QString::number(v));   // fires currentTextChanged -> applyGridSize
+        status->showMessage(QString("Grid %1 is not a positive multiple of 8 - using %2").arg(raw).arg(v), 5000);
+    }
+    rememberGridSize(box, list, key);
+}
+
+// Keeps the last kMaxCustomGrid typed sizes per axis, most recent first, in the dropdown and QSettings.
+void Editor::rememberGridSize(QComboBox *box, QStringList &list, const QString &key)
+{
+    const QString value = box->currentText();
+    if (value.isEmpty() || value.toInt() % 8) return;   // only valid sizes are remembered
+    if (sizes.contains(value) || list.contains(value)) return;
+    list.prepend(value);
+    while (list.size() > kMaxCustomGrid) list.removeLast();
+    QSettings().setValue(key, list);
+    box->blockSignals(true);
+    box->clear();
+    box->addItems(list + sizes);
+    box->setCurrentText(value);
+    box->blockSignals(false);
+}
+
+void Editor::checkGridFits()
+{
+    const int w = gridSizeComboH->currentText().toInt();
+    const int h = gridSizeComboV->currentText().toInt();
+    if (currentPixmap.isNull() || w <= 0 || h <= 0) return;
+    if (currentPixmap.width() % w || currentPixmap.height() % h)
+        status->showMessage(QString("Warning: image %1x%2 is not divisible by grid %3x%4 - frame columns will be wrong")
+            .arg(currentPixmap.width()).arg(currentPixmap.height()).arg(w).arg(h));
+}
+
+void Editor::rememberFolder(const QString &dir)
+{
+    lastOpenedFolder = dir;
+    QSettings().setValue("lastFolder", dir);
+}
+
 void Editor::reloadData(QJsonObject& root, QString &jsonPath)
 {
     if (root.contains("hitboxes") && root["hitboxes"].isArray()) {
@@ -409,18 +505,13 @@ void Editor::reloadData(QJsonObject& root, QString &jsonPath)
         const QJsonObject frame = root["frame"].toObject();
         const int w = frame["width"].toInt();
         const int h = frame["height"].toInt();
-        scene->setMajorGrid(w,h);
-        int i = 0;
-        for (auto const &size: sizes) {
-            if (size.toInt() == w) {
-                gridSizeComboH->setCurrentIndex(i);
-            }
-            if (size.toInt() == h) {
-                gridSizeComboV->setCurrentIndex(i);
-            }
-            ++i;
+        if (w > 0 && h > 0) {
+            gridSizeComboH->setCurrentText(QString::number(w));
+            gridSizeComboV->setCurrentText(QString::number(h));
+            commitGridSizes();   // rounds to a multiple of 8, applies the grid, remembers the sizes
         }
     }
+    checkGridFits();
 }
 
 QRect Editor::snapToGrid(const QRect &rect) {

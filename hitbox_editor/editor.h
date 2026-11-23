@@ -36,6 +36,12 @@ private slots:
 
 private:
     void reloadData(QJsonObject& root, QString &jsonPath);
+    void rememberFolder(const QString &dir);
+    void applyGridSize();
+    void commitGridSizes();
+    void commitGridSize(QComboBox *box, QStringList &list, const QString &key);
+    void rememberGridSize(QComboBox *box, QStringList &list, const QString &key);
+    void checkGridFits();
     QRect snapToGrid(const QRect &rect);
     void updateStatus();
     void rebuildSceneHitboxes();
@@ -71,6 +77,8 @@ private:
     QString lastOpenedFolder;
     QComboBox *gridSizeComboH;
     QComboBox *gridSizeComboV;
+    QStringList customGridW;
+    QStringList customGridH;
 };
 
 #endif // EDITOR_H

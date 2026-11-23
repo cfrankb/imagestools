@@ -9,6 +9,8 @@
 
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
+    QCoreApplication::setOrganizationName("cfrankb");   // QSettings location for remembered state
+    QCoreApplication::setApplicationName("HitboxEditor");
     QMainWindow win;
     Editor *ed = new Editor;
     win.setCentralWidget(ed);
